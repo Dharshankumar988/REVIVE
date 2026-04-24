@@ -1,0 +1,293 @@
+-- REVIVE Supabase bootstrap script
+-- Run this in Supabase SQL Editor.
+-- This script sets up auth profile sync, role model, core app tables,
+-- RAG-ready pgvector tables/functions, and RLS policies.
+
+create extension if not exists pgcrypto;
+create extension if not exists vector;
+
+-- Role enum
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
+    CREATE TYPE public.app_role AS ENUM ('admin', 'user');
+  END IF;
+END
+$$;
+
+-- Generic trigger for updated_at columns
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+-- Profiles table linked to auth.users
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text unique not null,
+  full_name text,
+  role public.app_role not null default 'user',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Auto-create profile row on new auth user
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, full_name, role)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    'user'
+  )
+  on conflict (id) do update
+  set email = excluded.email,
+      updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute procedure public.handle_new_user();
+
+-- Core app domain tables
+create table if not exists public.patients (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  age int,
+  notes text,
+  created_by uuid references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.vitals (
+  id bigserial primary key,
+  patient_id uuid references public.patients(id) on delete set null,
+  hr int not null check (hr >= 0),
+  spo2 int not null check (spo2 between 0 and 100),
+  movement int not null check (movement >= 0),
+  status text not null check (status in ('Normal','Warning','Critical')),
+  trend text not null check (trend in ('stable','declining','critical')),
+  scenario text,
+  source text not null default 'simulator',
+  ts timestamptz not null default now()
+);
+
+create table if not exists public.ai_guidance (
+  id bigserial primary key,
+  vital_id bigint references public.vitals(id) on delete cascade,
+  instant_action text,
+  detailed_steps jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- RAG documents and chunk embeddings
+create table if not exists public.rag_documents (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  protocol_type text not null,
+  body text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- NOTE: vector(768) assumes your embedding model outputs 768 dims.
+create table if not exists public.rag_chunks (
+  id uuid primary key default gen_random_uuid(),
+  document_id uuid not null references public.rag_documents(id) on delete cascade,
+  chunk_index int not null,
+  chunk_text text not null,
+  embedding vector(768) not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- Indexes
+create index if not exists idx_vitals_ts on public.vitals(ts desc);
+create index if not exists idx_vitals_status on public.vitals(status);
+create index if not exists idx_rag_chunks_document_id on public.rag_chunks(document_id);
+
+-- Vector similarity index
+create index if not exists idx_rag_chunks_embedding
+on public.rag_chunks
+using ivfflat (embedding vector_cosine_ops)
+with (lists = 100);
+
+-- Retrieval function for RAG
+create or replace function public.match_rag_chunks(
+  query_embedding vector(768),
+  match_count int default 5,
+  filter jsonb default '{}'::jsonb
+)
+returns table (
+  id uuid,
+  document_id uuid,
+  chunk_text text,
+  metadata jsonb,
+  similarity float
+)
+language sql
+stable
+as $$
+  select
+    c.id,
+    c.document_id,
+    c.chunk_text,
+    c.metadata,
+    1 - (c.embedding <=> query_embedding) as similarity
+  from public.rag_chunks c
+  where c.metadata @> filter
+  order by c.embedding <=> query_embedding
+  limit match_count;
+$$;
+
+-- RBAC helper
+create or replace function public.is_admin(user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1
+    from public.profiles p
+    where p.id = user_id and p.role = 'admin'
+  );
+$$;
+
+-- updated_at triggers
+DROP TRIGGER IF EXISTS trg_profiles_updated_at ON public.profiles;
+create trigger trg_profiles_updated_at
+before update on public.profiles
+for each row execute procedure public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_patients_updated_at ON public.patients;
+create trigger trg_patients_updated_at
+before update on public.patients
+for each row execute procedure public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_rag_documents_updated_at ON public.rag_documents;
+create trigger trg_rag_documents_updated_at
+before update on public.rag_documents
+for each row execute procedure public.set_updated_at();
+
+-- RLS
+alter table public.profiles enable row level security;
+alter table public.patients enable row level security;
+alter table public.vitals enable row level security;
+alter table public.ai_guidance enable row level security;
+alter table public.rag_documents enable row level security;
+alter table public.rag_chunks enable row level security;
+
+DROP POLICY IF EXISTS profiles_select_self_or_admin ON public.profiles;
+create policy profiles_select_self_or_admin
+  on public.profiles
+  for select
+  to authenticated
+  using (id = auth.uid() or public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS profiles_insert_self ON public.profiles;
+create policy profiles_insert_self
+  on public.profiles
+  for insert
+  to authenticated
+  with check (id = auth.uid());
+
+DROP POLICY IF EXISTS vitals_read_all_auth ON public.vitals;
+create policy vitals_read_all_auth
+  on public.vitals
+  for select
+  to authenticated
+  using (true);
+
+DROP POLICY IF EXISTS vitals_insert_all_auth ON public.vitals;
+create policy vitals_insert_all_auth
+  on public.vitals
+  for insert
+  to authenticated
+  with check (true);
+
+DROP POLICY IF EXISTS ai_guidance_read_all_auth ON public.ai_guidance;
+create policy ai_guidance_read_all_auth
+  on public.ai_guidance
+  for select
+  to authenticated
+  using (true);
+
+DROP POLICY IF EXISTS ai_guidance_insert_all_auth ON public.ai_guidance;
+create policy ai_guidance_insert_all_auth
+  on public.ai_guidance
+  for insert
+  to authenticated
+  with check (true);
+
+DROP POLICY IF EXISTS patients_read_all_auth ON public.patients;
+create policy patients_read_all_auth
+  on public.patients
+  for select
+  to authenticated
+  using (true);
+
+DROP POLICY IF EXISTS patients_insert_all_auth ON public.patients;
+create policy patients_insert_all_auth
+  on public.patients
+  for insert
+  to authenticated
+  with check (true);
+
+DROP POLICY IF EXISTS rag_documents_read_all_auth ON public.rag_documents;
+create policy rag_documents_read_all_auth
+  on public.rag_documents
+  for select
+  to authenticated
+  using (true);
+
+DROP POLICY IF EXISTS rag_documents_admin_write ON public.rag_documents;
+create policy rag_documents_admin_write
+  on public.rag_documents
+  for all
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS rag_chunks_read_all_auth ON public.rag_chunks;
+create policy rag_chunks_read_all_auth
+  on public.rag_chunks
+  for select
+  to authenticated
+  using (true);
+
+DROP POLICY IF EXISTS rag_chunks_admin_write ON public.rag_chunks;
+create policy rag_chunks_admin_write
+  on public.rag_chunks
+  for all
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+-- ----------------------------------------------------------------------
+-- User role assignment after creating users in Supabase Auth UI
+-- ----------------------------------------------------------------------
+-- update public.profiles
+-- set role = 'admin'
+-- where email in ('admin1@revive.local', 'admin2@revive.local');
+--
+-- update public.profiles
+-- set role = 'user'
+-- where email in ('user1@revive.local', 'user2@revive.local', 'user3@revive.local');

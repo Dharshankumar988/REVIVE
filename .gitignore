@@ -1,2 +1,14 @@
-backend/supabase_setup.sql
+# Ignore backend and frontend environment files
 backend/.env
+frontend/.env.local
+
+# Ignore backend virtual environment
+backend/.venv/
+
+# Ignore frontend node_modules and build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Ignore other generated files
+*.log
