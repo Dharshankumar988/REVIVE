@@ -313,8 +313,7 @@ async def websocket_vitals(websocket: WebSocket) -> None:
 
     # ✅ START simulation for this user
     print("🟢 User connected, starting simulation...")
-    task = asyncio.create_task(run_simulation())
-    tasks[websocket] = task
+    
 
     try:
         import json
