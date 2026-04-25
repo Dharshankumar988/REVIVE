@@ -317,8 +317,13 @@ async def websocket_vitals(websocket: WebSocket) -> None:
     tasks[websocket] = task
 
     try:
-        while True:
-            await websocket.receive_text()
+        import json
+
+        # Receive first message (config)
+        data = await websocket.receive_text()
+        config = json.loads(data)
+
+        use_simulation = config.get("use_simulation", False)
 
     except WebSocketDisconnect:
         print("🔴 User disconnected, stopping simulation...")
