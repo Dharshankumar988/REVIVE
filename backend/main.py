@@ -318,7 +318,11 @@ async def websocket_vitals(websocket: WebSocket) -> None:
     except Exception:
         ws_manager.disconnect(websocket)
 async def run_simulation():
+    print("✅ Simulator loop started")
+
     async for vitals in vitals_stream():
+        print("📡 Sending:", vitals)
+
         payload = IncomingVital(
             hr=vitals["hr"],
             spo2=vitals["spo2"],
