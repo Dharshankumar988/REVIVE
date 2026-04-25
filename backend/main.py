@@ -330,8 +330,13 @@ async def websocket_vitals(websocket: WebSocket) -> None:
         del tasks[websocket]
 
     ws_manager.disconnect(websocket)
-    except Exception:
-        ws_manager.disconnect(websocket)
+   except Exception:
+    task = tasks.get(websocket)
+    if task:
+        task.cancel()
+        del tasks[websocket]
+
+    ws_manager.disconnect(websocket)
 async def run_simulation():
     print("✅ Simulator loop started")
 
