@@ -315,9 +315,11 @@ async def websocket_vitals(websocket: WebSocket) -> None:
 
     import json
 
-    # 🧠 Receive config from frontend
-    data = await websocket.receive_text()
-    config = json.loads(data)
+    try:
+        data = await websocket.receive_text()
+        config = json.loads(data)
+    except Exception:
+        config = {}
 
     use_simulation = config.get("use_simulation", False)
 
