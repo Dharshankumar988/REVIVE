@@ -311,37 +311,30 @@ async def ingest_vitals(payload: IncomingVital) -> dict[str, Any]:
 async def websocket_vitals(websocket: WebSocket) -> None:
     await ws_manager.connect(websocket)
 
-    # ✅ START simulation for this user
-    print("🟢 User connected, starting simulation...")
+    print("🟢 User connected")
+
     import json
 
-# 🧠 Receive config from frontend
-data = await websocket.receive_text()
-config = json.loads(data)
+    # 🧠 Receive config from frontend
+    data = await websocket.receive_text()
+    config = json.loads(data)
 
-use_simulation = config.get("use_simulation", False)
+    use_simulation = config.get("use_simulation", False)
 
-if use_simulation:
-    print("🚀 Demo mode ON → starting simulation...")
-    task = asyncio.create_task(run_simulation())
-    tasks[websocket] = task
-else:
-    print("⛔ Demo mode OFF → no simulation")
-    
+    if use_simulation:
+        print("🚀 Demo mode ON → starting simulation...")
+        task = asyncio.create_task(run_simulation())
+        tasks[websocket] = task
+    else:
+        print("⛔ Demo mode OFF → no simulation")
 
     try:
-        import json
-
-        # Receive first message (config)
-        data = await websocket.receive_text()
-        config = json.loads(data)
-
-        use_simulation = config.get("use_simulation", False)
+        while True:
+            await websocket.receive_text()
 
     except WebSocketDisconnect:
         print("🔴 User disconnected, stopping simulation...")
 
-        # ✅ STOP simulation task
         task = tasks.get(websocket)
         if task:
             task.cancel()
