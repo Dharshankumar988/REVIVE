@@ -79,7 +79,7 @@ class ConnectionManager:
 history: deque[dict[str, int | datetime]] = deque()
 history_lock = asyncio.Lock()
 ws_manager = ConnectionManager()
-
+tasks = {}
 
 @app.get("/")
 async def root() -> dict[str, str]:
@@ -310,11 +310,22 @@ async def ingest_vitals(payload: IncomingVital) -> dict[str, Any]:
 @app.websocket("/ws/vitals")
 async def websocket_vitals(websocket: WebSocket) -> None:
     await ws_manager.connect(websocket)
+
+    # ✅ START simulation for this user
+    print("🟢 User connected, starting simulation...")
+    task = asyncio.create_task(run_simulation())
+    tasks[websocket] = task
+
     try:
         while True:
             await websocket.receive_text()
+
     except WebSocketDisconnect:
+        print("🔴 User disconnected, stopping simulation...")
+
+        # (we will stop task in Step 2)
         ws_manager.disconnect(websocket)
+
     except Exception:
         ws_manager.disconnect(websocket)
 async def run_simulation():
@@ -333,10 +344,10 @@ async def run_simulation():
         )
 
         await ingest_vitals(payload)
-@app.on_event("startup")
-async def start_simulation():
-    print("🚀 Starting simulation...")
-    asyncio.create_task(run_simulation())
+#@app.on_event("startup")
+#async def start_simulation():
+    #print("🚀 Starting simulation...")
+    #asyncio.create_task(run_simulation())
 if __name__ == "__main__":
     import uvicorn
 
