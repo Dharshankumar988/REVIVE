@@ -344,10 +344,7 @@ async def run_simulation():
         )
 
         await ingest_vitals(payload)
-#@app.on_event("startup")
-#async def start_simulation():
-    #print("🚀 Starting simulation...")
-    #asyncio.create_task(run_simulation())
+
 if __name__ == "__main__":
     import uvicorn
 
