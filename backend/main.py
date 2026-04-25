@@ -1,3 +1,4 @@
+from simulator import vitals_stream
 from collections import deque
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -316,8 +317,21 @@ async def websocket_vitals(websocket: WebSocket) -> None:
         ws_manager.disconnect(websocket)
     except Exception:
         ws_manager.disconnect(websocket)
+async def run_simulation():
+    async for vitals in vitals_stream():
+        payload = IncomingVital(
+            hr=vitals["hr"],
+            spo2=vitals["spo2"],
+            movement=vitals["movement"],
+            scenario=vitals.get("scenario", "Simulated"),
+            source="simulator",
+            patient_id="demo_user"
+        )
 
-
+        await ingest_vitals(payload)
+@app.on_event("startup")
+async def start_simulation():
+    asyncio.create_task(run_simulation())
 if __name__ == "__main__":
     import uvicorn
 
