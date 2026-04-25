@@ -8,7 +8,7 @@ backend/.venv/
 # Ignore frontend node_modules and build artifacts
 frontend/node_modules/
 frontend/.next/
-frontend/out/
+frontend/out/~
 
 # Ignore other generated files
 *.log

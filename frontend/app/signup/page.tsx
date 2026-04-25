@@ -47,20 +47,25 @@ export default function SignupPage() {
     setErrorMessage(null);
 
     try {
-      const { data, error } = await signUp(email, password);
+      const result = await signUp(email, password);
+      const { data, error } = result;
+
       if (error) {
         setErrorMessage(error.message);
         return;
       }
 
       if (data.session) {
-        router.replace("/");
+        const supabase = getSupabaseClient();
+        await supabase.auth.signOut();
+        setMessage("Signup complete. Please wait for admin approval before logging in.");
         return;
       }
 
-      setMessage("Signup successful. Check your email to confirm your account, then log in.");
-    } catch {
-      setErrorMessage("Unable to sign up. Check Supabase configuration.");
+      setMessage("Signup successful. Confirm your email if required, then wait for admin approval.");
+    } catch (error: any) {
+      console.error("Sign up error:", error);
+      setErrorMessage(`Unable to sign up: ${error.message || "Unknown error"}. Check Supabase configuration.`);
     } finally {
       setLoading(false);
     }
@@ -69,8 +74,11 @@ export default function SignupPage() {
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-4 flex justify-center">
+          <img src="/revive-logo.svg" alt="REVIVE logo" className="h-20 w-auto" />
+        </div>
         <h1 className="text-2xl font-semibold text-slate-900">Sign up</h1>
-        <p className="mt-1 text-sm text-slate-600">Create your REVIVE account.</p>
+        <p className="mt-1 text-sm text-slate-600">Create your REVIVE account. Admin approval is required before use.</p>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <div>

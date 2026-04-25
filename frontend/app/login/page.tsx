@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { signIn } from "@/lib/auth";
@@ -9,10 +9,12 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const pendingApproval = searchParams.get("pending") === "1";
 
   useEffect(() => {
     let mounted = true;
@@ -45,14 +47,43 @@ export default function LoginPage() {
     setErrorMessage(null);
 
     try {
-      const { error } = await signIn(email, password);
+      const result = await signIn(email, password);
+      const { data, error } = result;
+
       if (error) {
         setErrorMessage(error.message);
         return;
       }
+
+      const userId = data?.session?.user?.id;
+      if (!userId) {
+        setErrorMessage("Unable to read session. Please try again.");
+        return;
+      }
+
+      const supabase = getSupabaseClient();
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("is_approved")
+        .eq("id", userId)
+        .single();
+
+      if (profileError) {
+        await supabase.auth.signOut();
+        setErrorMessage("Unable to verify account approval. Please contact an admin.");
+        return;
+      }
+
+      if (!profile?.is_approved) {
+        await supabase.auth.signOut();
+        setErrorMessage("Your account is pending admin approval.");
+        return;
+      }
+
       router.replace("/");
-    } catch {
-      setErrorMessage("Unable to sign in. Check Supabase configuration.");
+    } catch (error: any) {
+      console.error("Sign in error:", error);
+      setErrorMessage(`Unable to sign in: ${error.message || "Unknown error"}. Check Supabase configuration.`);
     } finally {
       setLoading(false);
     }
@@ -61,8 +92,17 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="mb-4 flex justify-center">
+          <img src="/revive-logo.svg" alt="REVIVE logo" className="h-20 w-auto" />
+        </div>
         <h1 className="text-2xl font-semibold text-slate-900">Login</h1>
         <p className="mt-1 text-sm text-slate-600">Access REVIVE emergency dashboard.</p>
+
+        {pendingApproval ? (
+          <p className="mt-3 rounded-lg bg-amber-100 px-3 py-2 text-sm text-amber-900">
+            Your account is awaiting admin confirmation.
+          </p>
+        ) : null}
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <div>

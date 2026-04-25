@@ -32,9 +32,21 @@ create table if not exists public.profiles (
   email text unique not null,
   full_name text,
   role public.app_role not null default 'user',
+  is_approved boolean not null default false,
+  approved_at timestamptz,
+  approved_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists is_approved boolean not null default false;
+
+alter table public.profiles
+  add column if not exists approved_at timestamptz;
+
+alter table public.profiles
+  add column if not exists approved_by uuid references auth.users(id);
 
 -- Auto-create profile row on new auth user
 create or replace function public.handle_new_user()
@@ -44,12 +56,13 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, email, full_name, role)
+  insert into public.profiles (id, email, full_name, role, is_approved)
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data->>'full_name', ''),
-    'user'
+    'user',
+    false
   )
   on conflict (id) do update
   set email = excluded.email,
@@ -117,10 +130,16 @@ create table if not exists public.rag_chunks (
   created_at timestamptz not null default now()
 );
 
+alter table public.rag_chunks
+  alter column embedding drop not null;
+
 -- Indexes
 create index if not exists idx_vitals_ts on public.vitals(ts desc);
 create index if not exists idx_vitals_status on public.vitals(status);
 create index if not exists idx_rag_chunks_document_id on public.rag_chunks(document_id);
+create index if not exists idx_rag_chunks_text_fts on public.rag_chunks using gin (to_tsvector('english', chunk_text));
+create unique index if not exists idx_rag_documents_title on public.rag_documents(title);
+create unique index if not exists idx_rag_chunks_document_chunk on public.rag_chunks(document_id, chunk_index);
 
 -- Vector similarity index
 create index if not exists idx_rag_chunks_embedding
@@ -151,8 +170,35 @@ as $$
     c.metadata,
     1 - (c.embedding <=> query_embedding) as similarity
   from public.rag_chunks c
-  where c.metadata @> filter
+  where c.embedding is not null
+    and c.metadata @> filter
   order by c.embedding <=> query_embedding
+  limit match_count;
+$$;
+
+create or replace function public.search_rag_chunks_text(
+  query_text text,
+  match_count int default 5
+)
+returns table (
+  id uuid,
+  document_id uuid,
+  chunk_text text,
+  metadata jsonb,
+  rank real
+)
+language sql
+stable
+as $$
+  select
+    c.id,
+    c.document_id,
+    c.chunk_text,
+    c.metadata,
+    ts_rank_cd(to_tsvector('english', c.chunk_text), plainto_tsquery('english', query_text)) as rank
+  from public.rag_chunks c
+  where to_tsvector('english', c.chunk_text) @@ plainto_tsquery('english', query_text)
+  order by rank desc
   limit match_count;
 $$;
 
@@ -167,9 +213,64 @@ as $$
   select exists(
     select 1
     from public.profiles p
-    where p.id = user_id and p.role = 'admin'
+    where p.id = user_id and p.role = 'admin' and p.is_approved = true
   );
 $$;
+
+create or replace function public.is_approved(user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1
+    from public.profiles p
+    where p.id = user_id and p.is_approved = true
+  );
+$$;
+
+-- Seed fallback RAG corpus so retrieval is never empty.
+insert into public.rag_documents (title, protocol_type, body, metadata)
+values
+  (
+    'Hypoxia Immediate Response',
+    'respiratory',
+    'Assess airway, provide oxygen, monitor SpO2 continuously, and escalate if SpO2 stays below 90%.',
+    '{"source":"bootstrap"}'::jsonb
+  ),
+  (
+    'Cardiac Arrest Immediate Response',
+    'cardiac',
+    'Check responsiveness and pulse, start CPR immediately, activate emergency response team, and continue ACLS sequence.',
+    '{"source":"bootstrap"}'::jsonb
+  ),
+  (
+    'Tachycardia Stabilization',
+    'cardiac',
+    'Monitor heart rhythm, assess symptoms, maintain oxygenation, and prepare escalation for sustained instability.',
+    '{"source":"bootstrap"}'::jsonb
+  )
+on conflict (title) do nothing;
+
+insert into public.rag_chunks (document_id, chunk_index, chunk_text, embedding, metadata)
+select d.id, s.chunk_index, s.chunk_text, null, '{"source":"bootstrap"}'::jsonb
+from public.rag_documents d
+join (
+  values
+    ('Hypoxia Immediate Response', 0, 'Open airway and position patient to optimize breathing.'),
+    ('Hypoxia Immediate Response', 1, 'Start supplemental oxygen and track oxygen saturation every minute.'),
+    ('Hypoxia Immediate Response', 2, 'Escalate urgently if SpO2 remains below 90% despite support.'),
+    ('Cardiac Arrest Immediate Response', 0, 'Confirm unresponsiveness and check pulse immediately.'),
+    ('Cardiac Arrest Immediate Response', 1, 'Start high-quality chest compressions and maintain airway support.'),
+    ('Cardiac Arrest Immediate Response', 2, 'Continue ACLS protocol and prepare defibrillation if indicated.'),
+    ('Tachycardia Stabilization', 0, 'Reassess heart rate trend and evaluate chest pain or breathlessness.'),
+    ('Tachycardia Stabilization', 1, 'Maintain oxygenation and continuous rhythm monitoring.'),
+    ('Tachycardia Stabilization', 2, 'Escalate to advanced cardiac support if instability worsens.')
+) as s(title, chunk_index, chunk_text)
+  on s.title = d.title
+on conflict (document_id, chunk_index) do nothing;
 
 -- updated_at triggers
 DROP TRIGGER IF EXISTS trg_profiles_updated_at ON public.profiles;
@@ -209,54 +310,62 @@ create policy profiles_insert_self
   to authenticated
   with check (id = auth.uid());
 
+DROP POLICY IF EXISTS profiles_update_admin_only ON public.profiles;
+create policy profiles_update_admin_only
+  on public.profiles
+  for update
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
 DROP POLICY IF EXISTS vitals_read_all_auth ON public.vitals;
 create policy vitals_read_all_auth
   on public.vitals
   for select
   to authenticated
-  using (true);
+  using (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS vitals_insert_all_auth ON public.vitals;
 create policy vitals_insert_all_auth
   on public.vitals
   for insert
   to authenticated
-  with check (true);
+  with check (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS ai_guidance_read_all_auth ON public.ai_guidance;
 create policy ai_guidance_read_all_auth
   on public.ai_guidance
   for select
   to authenticated
-  using (true);
+  using (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS ai_guidance_insert_all_auth ON public.ai_guidance;
 create policy ai_guidance_insert_all_auth
   on public.ai_guidance
   for insert
   to authenticated
-  with check (true);
+  with check (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS patients_read_all_auth ON public.patients;
 create policy patients_read_all_auth
   on public.patients
   for select
   to authenticated
-  using (true);
+  using (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS patients_insert_all_auth ON public.patients;
 create policy patients_insert_all_auth
   on public.patients
   for insert
   to authenticated
-  with check (true);
+  with check (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS rag_documents_read_all_auth ON public.rag_documents;
 create policy rag_documents_read_all_auth
   on public.rag_documents
   for select
   to authenticated
-  using (true);
+  using (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS rag_documents_admin_write ON public.rag_documents;
 create policy rag_documents_admin_write
@@ -271,7 +380,7 @@ create policy rag_chunks_read_all_auth
   on public.rag_chunks
   for select
   to authenticated
-  using (true);
+  using (public.is_approved(auth.uid()));
 
 DROP POLICY IF EXISTS rag_chunks_admin_write ON public.rag_chunks;
 create policy rag_chunks_admin_write
@@ -286,8 +395,12 @@ create policy rag_chunks_admin_write
 -- ----------------------------------------------------------------------
 -- update public.profiles
 -- set role = 'admin'
--- where email in ('admin1@revive.local', 'admin2@revive.local');
+--   , is_approved = true
+--   , approved_at = now()
+-- where email in ('admin@revive.com', 'admin2@revive.com');
 --
 -- update public.profiles
 -- set role = 'user'
--- where email in ('user1@revive.local', 'user2@revive.local', 'user3@revive.local');
+--   , is_approved = true
+--   , approved_at = now()
+-- where email in ('user@revive.com');

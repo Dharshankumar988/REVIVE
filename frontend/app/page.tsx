@@ -20,6 +20,13 @@ import { getSupabaseClient } from "@/lib/supabase";
 type RiskStatus = "Normal" | "Warning" | "Critical";
 type Scenario = "Stable" | "Gradual Decline" | "Sudden Cardiac Event";
 type TrendLabel = "stable" | "declining" | "critical";
+type AppRole = "admin" | "user";
+
+type PendingUser = {
+  id: string;
+  email: string;
+  created_at: string;
+};
 
 type VitalsPoint = {
   hr: number;
@@ -120,11 +127,16 @@ export default function Page() {
   const [timerFlash, setTimerFlash] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<AppRole>("user");
+  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    const setSessionState = (session: Session | null) => {
+    const setSessionState = async (session: Session | null) => {
       if (!mounted) {
         return;
       }
@@ -132,12 +144,47 @@ export default function Page() {
       if (!session) {
         setAuthReady(false);
         setUserEmail(null);
+        setUserRole("user");
+        setPendingUsers([]);
         router.replace("/login");
         return;
       }
 
-      setUserEmail(session.user.email ?? null);
-      setAuthReady(true);
+      try {
+        const supabase = getSupabaseClient();
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role,is_approved")
+          .eq("id", session.user.id)
+          .single();
+
+        if (profileError || !profile) {
+          await supabase.auth.signOut();
+          setAuthReady(false);
+          setUserEmail(null);
+          setUserRole("user");
+          router.replace("/login");
+          return;
+        }
+
+        if (!profile.is_approved) {
+          await supabase.auth.signOut();
+          setAuthReady(false);
+          setUserEmail(null);
+          setUserRole("user");
+          router.replace("/login?pending=1");
+          return;
+        }
+
+        setUserEmail(session.user.email ?? null);
+        setUserRole(profile.role === "admin" ? "admin" : "user");
+        setAuthReady(true);
+      } catch {
+        setAuthReady(false);
+        setUserEmail(null);
+        setUserRole("user");
+        router.replace("/login");
+      }
     };
 
     const initialize = async () => {
@@ -146,10 +193,10 @@ export default function Page() {
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        setSessionState(session);
+        await setSessionState(session);
 
         const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-          setSessionState(nextSession);
+          void setSessionState(nextSession);
         });
 
         return () => {
@@ -301,6 +348,86 @@ export default function Page() {
     [points],
   );
 
+  useEffect(() => {
+    if (!authReady || userRole !== "admin") {
+      setPendingUsers([]);
+      setPendingError(null);
+      return;
+    }
+
+    let mounted = true;
+
+    const loadPendingUsers = async () => {
+      setPendingLoading(true);
+      setPendingError(null);
+
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id,email,created_at")
+          .eq("is_approved", false)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          throw error;
+        }
+
+        if (mounted) {
+          const normalized = (data ?? []).filter(
+            (row) => typeof row.id === "string" && typeof row.email === "string" && typeof row.created_at === "string",
+          ) as PendingUser[];
+          setPendingUsers(normalized);
+        }
+      } catch {
+        if (mounted) {
+          setPendingError("Unable to load pending users.");
+        }
+      } finally {
+        if (mounted) {
+          setPendingLoading(false);
+        }
+      }
+    };
+
+    void loadPendingUsers();
+
+    return () => {
+      mounted = false;
+    };
+  }, [authReady, userRole]);
+
+  const handleApproveUser = async (profileId: string) => {
+    setApprovingId(profileId);
+    setPendingError(null);
+
+    try {
+      const supabase = getSupabaseClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          is_approved: true,
+          approved_at: new Date().toISOString(),
+          approved_by: user?.id ?? null,
+        })
+        .eq("id", profileId);
+
+      if (error) {
+        throw error;
+      }
+
+      setPendingUsers((prev) => prev.filter((userRow) => userRow.id !== profileId));
+    } catch {
+      setPendingError("Approval failed. Please try again.");
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   const handleSignOut = async () => {
     await signOut();
     router.replace("/login");
@@ -366,6 +493,44 @@ export default function Page() {
             {isConnected ? "LIVE" : "DISCONNECTED"}
           </div>
         </header>
+
+        {userRole === "admin" ? (
+          <Card className="rounded-2xl border-l-4 border-l-indigo-500 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold text-slate-800">Pending User Confirmations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pendingLoading ? <p className="text-sm text-slate-600">Loading pending users...</p> : null}
+              {pendingError ? <p className="text-sm text-red-600">{pendingError}</p> : null}
+
+              {!pendingLoading && pendingUsers.length === 0 ? (
+                <p className="text-sm text-slate-600">No pending users.</p>
+              ) : null}
+
+              <div className="space-y-3">
+                {pendingUsers.map((pendingUser) => (
+                  <div
+                    key={pendingUser.id}
+                    className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{pendingUser.email}</p>
+                      <p className="text-xs text-slate-500">Requested: {formatClockLabel(pendingUser.created_at)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleApproveUser(pendingUser.id)}
+                      disabled={approvingId === pendingUser.id}
+                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {approvingId === pendingUser.id ? "Approving..." : "Approve user"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <section className="grid grid-cols-1 gap-6 rounded-2xl bg-slate-950 p-6 shadow-sm ring-1 ring-slate-800 md:grid-cols-2">
           <div>

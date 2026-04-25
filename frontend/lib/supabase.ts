@@ -14,13 +14,21 @@ export function getSupabaseClient(): SupabaseClient {
     throw new Error("Missing Supabase environment variables.");
   }
 
-  supabaseClient = createClient(url, anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  });
+  try {
+    supabaseClient = createClient(url, anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
 
-  return supabaseClient;
+    // Test the connection
+    console.log("Supabase client initialized successfully");
+
+    return supabaseClient;
+  } catch (error) {
+    console.error("Error initializing Supabase client:", error);
+    throw new Error(`Failed to initialize Supabase client: ${error}`);
+  }
 }
