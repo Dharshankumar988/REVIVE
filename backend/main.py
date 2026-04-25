@@ -313,6 +313,20 @@ async def websocket_vitals(websocket: WebSocket) -> None:
 
     # ✅ START simulation for this user
     print("🟢 User connected, starting simulation...")
+    import json
+
+# 🧠 Receive config from frontend
+data = await websocket.receive_text()
+config = json.loads(data)
+
+use_simulation = config.get("use_simulation", False)
+
+if use_simulation:
+    print("🚀 Demo mode ON → starting simulation...")
+    task = asyncio.create_task(run_simulation())
+    tasks[websocket] = task
+else:
+    print("⛔ Demo mode OFF → no simulation")
     
 
     try:
