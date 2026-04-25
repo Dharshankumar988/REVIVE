@@ -320,12 +320,16 @@ async def websocket_vitals(websocket: WebSocket) -> None:
         while True:
             await websocket.receive_text()
 
-    except WebSocketDisconnect:
-        print("🔴 User disconnected, stopping simulation...")
+   except WebSocketDisconnect:
+    print("🔴 User disconnected, stopping simulation...")
 
-        # (we will stop task in Step 2)
-        ws_manager.disconnect(websocket)
+    # ✅ STOP simulation task
+    task = tasks.get(websocket)
+    if task:
+        task.cancel()
+        del tasks[websocket]
 
+    ws_manager.disconnect(websocket)
     except Exception:
         ws_manager.disconnect(websocket)
 async def run_simulation():
