@@ -15,16 +15,27 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { signOut } from "@/lib/auth";
+import { getApiBases, getWsCandidateUrls, toApiBaseFromWs } from "@/lib/api";
 import { getSupabaseClient } from "@/lib/supabase";
 
 type RiskStatus = "Normal" | "Warning" | "Critical";
-type Scenario = "Stable" | "Gradual Decline" | "Sudden Cardiac Event";
+type Scenario = "Stable" | "Gradual Decline" | "Sudden Cardiac Event" | "Cardiac Arrest";
 type TrendLabel = "stable" | "declining" | "critical";
 type AppRole = "admin" | "user";
+type ThreatLevel = "LOW" | "ELEVATED" | "HIGH" | "SEVERE";
+type SimulationChoice = "1" | "2" | "3" | "4";
 
 type PendingUser = {
   id: string;
   email: string;
+  created_at: string;
+};
+
+type Patient = {
+  id: string;
+  name: string;
+  age: number | null;
+  notes: string | null;
   created_at: string;
 };
 
@@ -37,14 +48,29 @@ type VitalsPoint = {
   scenario: string;
   instant_action?: string | null;
   detailed_steps?: string[];
+  veteran_brief?: string | null;
   trend?: TrendLabel;
 };
 
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+};
+
 const MAX_POINTS = 20;
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/vitals";
-const TIMER_RESET_SECONDS = 120;
+const WS_CANDIDATE_URLS = getWsCandidateUrls();
+
+const API_CANDIDATE_BASES = getApiBases();
 
 const scenarios: Scenario[] = ["Stable", "Gradual Decline", "Sudden Cardiac Event"];
+const simulationChoices: Array<{ value: SimulationChoice; label: Scenario }> = [
+  { value: "1", label: "Stable" },
+  { value: "2", label: "Gradual Decline" },
+  { value: "3", label: "Sudden Cardiac Event" },
+  { value: "4", label: "Cardiac Arrest" },
+];
 
 const statusStyles: Record<RiskStatus, { label: string; chip: string; card: string }> = {
   Normal: {
@@ -110,21 +136,43 @@ function getSpo2Status(spo2: number): RiskStatus {
   return "Normal";
 }
 
-function formatTimer(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const secs = (seconds % 60).toString().padStart(2, "0");
-  return `${mins}:${secs}`;
+function getThreatLevel(status: RiskStatus, trend: TrendLabel): ThreatLevel {
+  if (status === "Critical") {
+    return "SEVERE";
+  }
+  if (status === "Warning" && trend === "critical") {
+    return "HIGH";
+  }
+  if (status === "Warning" || trend === "declining") {
+    return "ELEVATED";
+  }
+  return "LOW";
 }
+
+const threatStyles: Record<ThreatLevel, { chip: string; note: string }> = {
+  LOW: {
+    chip: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300",
+    note: "Patient is stable. Continue routine monitoring and periodic reassessment.",
+  },
+  ELEVATED: {
+    chip: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
+    note: "Signs of deterioration are present. Increase observation frequency and prepare escalation.",
+  },
+  HIGH: {
+    chip: "bg-orange-100 text-orange-900 ring-1 ring-orange-300",
+    note: "High-risk pattern detected. Keep emergency resources ready and brief the response team.",
+  },
+  SEVERE: {
+    chip: "bg-red-100 text-red-900 ring-1 ring-red-300",
+    note: "Emergency state. Trigger protocol immediately and coordinate critical response.",
+  },
+};
 
 export default function Page() {
   const router = useRouter();
   const [points, setPoints] = useState<VitalsPoint[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [scenario, setScenario] = useState<Scenario>("Stable");
-  const [timerSeconds, setTimerSeconds] = useState(TIMER_RESET_SECONDS);
-  const [timerFlash, setTimerFlash] = useState(false);
+  const [activeWsUrl, setActiveWsUrl] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<AppRole>("user");
@@ -132,6 +180,28 @@ export default function Page() {
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingError, setPendingError] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(false);
+  const [patientsError, setPatientsError] = useState<string | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>("");
+  const [patientName, setPatientName] = useState("");
+  const [patientAge, setPatientAge] = useState("");
+  const [patientNotes, setPatientNotes] = useState("");
+  const [patientSaving, setPatientSaving] = useState(false);
+  const [patientSaveMessage, setPatientSaveMessage] = useState<string | null>(null);
+  const [patientSaveError, setPatientSaveError] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      content: "I’m the REVIVE assistant. Ask anything. I reply in quick clinical lines.",
+      timestamp: new Date().toISOString(),
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [simulationChoice, setSimulationChoice] = useState<SimulationChoice>("1");
 
   useEffect(() => {
     let mounted = true;
@@ -168,6 +238,31 @@ export default function Page() {
         }
 
         if (!profile.is_approved) {
+          const { count: approvedAdminCount, error: approvedAdminCountError } = await supabase
+            .from("profiles")
+            .select("id", { count: "exact", head: true })
+            .eq("role", "admin")
+            .eq("is_approved", true);
+
+          if (!approvedAdminCountError && (approvedAdminCount ?? 0) === 0) {
+            const { error: bootstrapError } = await supabase
+              .from("profiles")
+              .update({
+                role: "admin",
+                is_approved: true,
+                approved_at: new Date().toISOString(),
+                approved_by: session.user.id,
+              })
+              .eq("id", session.user.id);
+
+            if (!bootstrapError) {
+              setUserEmail(session.user.email ?? null);
+              setUserRole("admin");
+              setAuthReady(true);
+              return;
+            }
+          }
+
           await supabase.auth.signOut();
           setAuthReady(false);
           setUserEmail(null);
@@ -230,111 +325,303 @@ export default function Page() {
       return;
     }
 
-    setPoints([]);
-    const socket = new WebSocket(`${WS_URL}?scenario=${encodeURIComponent(scenario)}`);
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let retryHandle: number | null = null;
+    let candidateIndex = 0;
 
-    socket.onopen = () => {
-      setIsConnected(true);
-    };
+    const connect = () => {
+      if (disposed || WS_CANDIDATE_URLS.length === 0) {
+        return;
+      }
 
-    socket.onclose = () => {
-      setIsConnected(false);
-    };
+      const wsUrl = WS_CANDIDATE_URLS[candidateIndex % WS_CANDIDATE_URLS.length];
+      let opened = false;
 
-    socket.onerror = () => {
-      setIsConnected(false);
-    };
-
-    socket.onmessage = (event) => {
       try {
-        const incoming = JSON.parse(event.data) as Partial<VitalsPoint>;
-        if (
-          typeof incoming.hr !== "number" ||
-          typeof incoming.spo2 !== "number" ||
-          typeof incoming.movement !== "number" ||
-          typeof incoming.timestamp !== "string" ||
-          typeof incoming.status !== "string" ||
-          typeof incoming.scenario !== "string"
-        ) {
+        socket = new WebSocket(wsUrl);
+      } catch {
+        candidateIndex += 1;
+        retryHandle = window.setTimeout(connect, 1200);
+        return;
+      }
+
+      socket.onopen = () => {
+        opened = true;
+        setIsConnected(true);
+        setActiveWsUrl(wsUrl);
+      };
+
+      socket.onclose = () => {
+        if (disposed) {
           return;
         }
+        setIsConnected(false);
+        if (!opened) {
+          candidateIndex += 1;
+        }
+        retryHandle = window.setTimeout(connect, 1200);
+      };
 
-        const status =
-          incoming.status === "Critical" || incoming.status === "Warning" || incoming.status === "Normal"
-            ? incoming.status
-            : "Normal";
+      socket.onerror = () => {
+        setIsConnected(false);
+      };
 
-        const next: VitalsPoint = {
-          hr: incoming.hr,
-          spo2: incoming.spo2,
-          movement: incoming.movement,
-          timestamp: incoming.timestamp,
-          status,
-          scenario: incoming.scenario,
-          instant_action:
-            typeof incoming.instant_action === "string" || incoming.instant_action === null
-              ? incoming.instant_action
-              : null,
-          detailed_steps:
-            Array.isArray(incoming.detailed_steps) && incoming.detailed_steps.every((step) => typeof step === "string")
-              ? incoming.detailed_steps
-              : [],
-          trend:
-            incoming.trend === "critical" || incoming.trend === "declining" || incoming.trend === "stable"
-              ? incoming.trend
-              : "stable",
-        };
+      socket.onmessage = (event) => {
+        try {
+          const incoming = JSON.parse(event.data) as Partial<VitalsPoint>;
+          if (
+            typeof incoming.hr !== "number" ||
+            typeof incoming.spo2 !== "number" ||
+            typeof incoming.movement !== "number" ||
+            typeof incoming.timestamp !== "string" ||
+            typeof incoming.status !== "string" ||
+            typeof incoming.scenario !== "string"
+          ) {
+            return;
+          }
 
-        setPoints((prev) => {
-          const appended = [...prev, next];
-          return appended.length > MAX_POINTS ? appended.slice(-MAX_POINTS) : appended;
-        });
-      } catch {
-        // Ignore malformed socket messages.
+          const status =
+            incoming.status === "Critical" || incoming.status === "Warning" || incoming.status === "Normal"
+              ? incoming.status
+              : "Normal";
+
+          const next: VitalsPoint = {
+            hr: incoming.hr,
+            spo2: incoming.spo2,
+            movement: incoming.movement,
+            timestamp: incoming.timestamp,
+            status,
+            scenario: incoming.scenario,
+            instant_action:
+              typeof incoming.instant_action === "string" || incoming.instant_action === null
+                ? incoming.instant_action
+                : null,
+            detailed_steps:
+              Array.isArray(incoming.detailed_steps) && incoming.detailed_steps.every((step) => typeof step === "string")
+                ? incoming.detailed_steps
+                : [],
+            veteran_brief:
+              typeof incoming.veteran_brief === "string" || incoming.veteran_brief === null
+                ? incoming.veteran_brief
+                : null,
+            trend:
+              incoming.trend === "critical" || incoming.trend === "declining" || incoming.trend === "stable"
+                ? incoming.trend
+                : "stable",
+          };
+
+          setPoints((prev) => {
+            const appended = [...prev, next];
+            return appended.length > MAX_POINTS ? appended.slice(-MAX_POINTS) : appended;
+          });
+        } catch {
+          // Ignore malformed socket messages.
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+      setIsConnected(false);
+      if (retryHandle !== null) {
+        window.clearTimeout(retryHandle);
+      }
+      if (socket) {
+        socket.close();
       }
     };
-
-    return () => {
-      socket.close();
-    };
-  }, [authReady, scenario]);
+  }, [authReady]);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setTimerSeconds((prev) => {
-        if (prev <= 1) {
-          setTimerFlash(true);
-          return TIMER_RESET_SECONDS;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!timerFlash) {
+    if (!authReady) {
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setTimerFlash(false);
-    }, 700);
+    let disposed = false;
+    let lastTimestamp: string | null = null;
+
+    const pollLatestVitals = async () => {
+      if (disposed) {
+        return;
+      }
+
+      for (const base of API_CANDIDATE_BASES) {
+        try {
+          const response = await fetch(`${base}/api/vitals/latest`);
+          if (!response.ok) {
+            continue;
+          }
+
+          const payload = (await response.json()) as {
+            ok?: boolean;
+            data?: Partial<VitalsPoint> | null;
+          };
+
+          if (payload.ok !== true || !payload.data || typeof payload.data.timestamp !== "string") {
+            continue;
+          }
+
+          if (payload.data.timestamp === lastTimestamp) {
+            return;
+          }
+
+          lastTimestamp = payload.data.timestamp;
+
+          if (
+            typeof payload.data.hr !== "number" ||
+            typeof payload.data.spo2 !== "number" ||
+            typeof payload.data.movement !== "number" ||
+            typeof payload.data.status !== "string" ||
+            typeof payload.data.scenario !== "string"
+          ) {
+            return;
+          }
+
+          const status =
+            payload.data.status === "Critical" || payload.data.status === "Warning" || payload.data.status === "Normal"
+              ? payload.data.status
+              : "Normal";
+
+          const next: VitalsPoint = {
+            hr: payload.data.hr,
+            spo2: payload.data.spo2,
+            movement: payload.data.movement,
+            timestamp: payload.data.timestamp,
+            status,
+            scenario: payload.data.scenario,
+            instant_action:
+              typeof payload.data.instant_action === "string" || payload.data.instant_action === null
+                ? payload.data.instant_action
+                : null,
+            detailed_steps:
+              Array.isArray(payload.data.detailed_steps) && payload.data.detailed_steps.every((step) => typeof step === "string")
+                ? payload.data.detailed_steps
+                : [],
+            veteran_brief:
+              typeof payload.data.veteran_brief === "string" || payload.data.veteran_brief === null
+                ? payload.data.veteran_brief
+                : null,
+            trend:
+              payload.data.trend === "critical" || payload.data.trend === "declining" || payload.data.trend === "stable"
+                ? payload.data.trend
+                : "stable",
+          };
+
+          setPoints((prev) => {
+            if (prev.some((point) => point.timestamp === next.timestamp)) {
+              return prev;
+            }
+
+            const appended = [...prev, next];
+            return appended.length > MAX_POINTS ? appended.slice(-MAX_POINTS) : appended;
+          });
+          return;
+        } catch {
+          // Try the next configured API base.
+        }
+      }
+    };
+
+    void pollLatestVitals();
+    const pollHandle = window.setInterval(() => {
+      void pollLatestVitals();
+    }, 1500);
 
     return () => {
-      window.clearTimeout(timeoutId);
+      disposed = true;
+      window.clearInterval(pollHandle);
     };
-  }, [timerFlash]);
+  }, [authReady]);
 
   const latest = points[points.length - 1];
   const currentStatus: RiskStatus = latest?.status ?? "Normal";
   const currentTrend: TrendLabel = latest?.trend ?? "stable";
+  const threatLevel = getThreatLevel(currentStatus, currentTrend);
+  const threatStyle = threatStyles[threatLevel];
   const statusStyle = statusStyles[currentStatus];
   const trendStyle = trendStyles[currentTrend];
   const isCritical = currentStatus === "Critical";
+  const emergencyAction = latest?.instant_action?.trim() ?? "";
+  const emergencySteps = Array.isArray(latest?.detailed_steps)
+    ? latest.detailed_steps.filter((step) => typeof step === "string" && step.trim().length > 0)
+    : [];
+  const veteranBrief = latest?.veteran_brief?.trim() ?? "";
+  const streamFreshnessMs = latest ? Date.now() - new Date(latest.timestamp).getTime() : Number.POSITIVE_INFINITY;
+  const isStreamLive = isConnected || streamFreshnessMs < 15000;
+  const emergencyHandoffSnapshot = latest
+    ? `HR ${latest.hr} BPM | SpO2 ${latest.spo2}% | Movement ${latest.movement} | Trend ${currentTrend.toUpperCase()}`
+    : "Latest vitals are not available yet.";
+
+  const apiBases = [
+    toApiBaseFromWs(activeWsUrl),
+    ...API_CANDIDATE_BASES,
+  ].filter((value, index, arr): value is string => !!value && arr.indexOf(value) === index);
+  const apiBaseSignature = apiBases.join("|");
+
+  useEffect(() => {
+    if (!authReady) {
+      return;
+    }
+
+    let mounted = true;
+
+    const syncScenario = async () => {
+      for (const base of apiBases) {
+        try {
+          const response = await fetch(`${base}/api/simulation/scenario`);
+          if (!response.ok) {
+            continue;
+          }
+
+          const payload = (await response.json()) as {
+            ok?: boolean;
+            scenario?: string;
+          };
+
+          if (!mounted || payload.ok !== true) {
+            return;
+          }
+
+          if (payload.scenario === "1" || payload.scenario === "2" || payload.scenario === "3" || payload.scenario === "4") {
+            setSimulationChoice(payload.scenario);
+          }
+          return;
+        } catch {
+          // Try the next configured API base.
+        }
+      }
+    };
+
+    void syncScenario();
+
+    return () => {
+      mounted = false;
+    };
+  }, [authReady, apiBaseSignature]);
+
+  useEffect(() => {
+    if (latest?.scenario === "Gradual Decline") {
+      setSimulationChoice("2");
+      return;
+    }
+
+    if (latest?.scenario === "Sudden Cardiac Event") {
+      setSimulationChoice("3");
+      return;
+    }
+
+    if (latest?.scenario === "Cardiac Arrest") {
+      setSimulationChoice("4");
+      return;
+    }
+
+    if (latest?.scenario === "Stable") {
+      setSimulationChoice("1");
+    }
+  }, [latest?.scenario]);
 
   const hrStatus = latest ? getHeartRateStatus(latest.hr) : "Normal";
   const spo2Status = latest ? getSpo2Status(latest.spo2) : "Normal";
@@ -397,6 +684,64 @@ export default function Page() {
     };
   }, [authReady, userRole]);
 
+  useEffect(() => {
+    if (!authReady) {
+      setPatients([]);
+      setPatientsError(null);
+      setSelectedPatientId("");
+      return;
+    }
+
+    let mounted = true;
+
+    const loadPatients = async () => {
+      setPatientsLoading(true);
+      setPatientsError(null);
+
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from("patients")
+          .select("id,name,age,notes,created_at")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        const normalized = (data ?? []).filter(
+          (row) =>
+            typeof row.id === "string" &&
+            typeof row.name === "string" &&
+            typeof row.created_at === "string",
+        ) as Patient[];
+        setPatients(normalized);
+
+        if (!selectedPatientId && normalized.length > 0) {
+          setSelectedPatientId(normalized[0].id);
+        }
+      } catch {
+        if (mounted) {
+          setPatientsError("Unable to load patients.");
+        }
+      } finally {
+        if (mounted) {
+          setPatientsLoading(false);
+        }
+      }
+    };
+
+    void loadPatients();
+
+    return () => {
+      mounted = false;
+    };
+  }, [authReady, selectedPatientId]);
+
   const handleApproveUser = async (profileId: string) => {
     setApprovingId(profileId);
     setPendingError(null);
@@ -433,6 +778,180 @@ export default function Page() {
     router.replace("/login");
   };
 
+  const handleCreatePatient = async () => {
+    const trimmedName = patientName.trim();
+    const ageNumber = patientAge.trim() === "" ? null : Number(patientAge);
+
+    setPatientSaveMessage(null);
+    setPatientSaveError(null);
+
+    if (!trimmedName) {
+      setPatientSaveError("Patient name is required.");
+      return;
+    }
+
+    if (ageNumber !== null && (!Number.isInteger(ageNumber) || ageNumber < 0 || ageNumber > 130)) {
+      setPatientSaveError("Age must be an integer between 0 and 130.");
+      return;
+    }
+
+    setPatientSaving(true);
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("patients")
+        .insert({
+          name: trimmedName,
+          age: ageNumber,
+          notes: patientNotes.trim() || null,
+        })
+        .select("id,name,age,notes,created_at")
+        .single();
+
+      if (error || !data) {
+        throw error ?? new Error("Insert failed");
+      }
+
+      const createdPatient = data as Patient;
+      setPatients((prev) => [createdPatient, ...prev]);
+      setSelectedPatientId(createdPatient.id);
+      setPatientName("");
+      setPatientAge("");
+      setPatientNotes("");
+      setPatientSaveMessage("Patient saved.");
+    } catch {
+      setPatientSaveError("Unable to save patient details.");
+    } finally {
+      setPatientSaving(false);
+    }
+  };
+
+  const handleSendChatMessage = async () => {
+    const message = chatInput.trim();
+    setChatError(null);
+
+    if (!message) {
+      setChatError("Type a question or prompt first.");
+      return;
+    }
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: message,
+      timestamp: new Date().toISOString(),
+    };
+
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput("");
+    setChatSending(true);
+
+    const context = latest
+      ? {
+          hr: latest.hr,
+          spo2: latest.spo2,
+          movement: latest.movement,
+          status: latest.status,
+          trend: latest.trend ?? "stable",
+          scenario: latest.scenario,
+        }
+      : null;
+
+    try {
+      let accepted = false;
+      let reply = "";
+
+      for (const base of apiBases) {
+        try {
+          const response = await fetch(`${base}/api/chat`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message,
+              context,
+            }),
+          });
+
+          const payload = (await response.json()) as {
+            ok?: boolean;
+            reply?: string;
+          };
+
+          if (response.ok && payload.ok === true && typeof payload.reply === "string") {
+            reply = payload.reply;
+            accepted = true;
+            break;
+          }
+        } catch {
+          // Try the next configured API base.
+        }
+      }
+
+      if (!accepted) {
+        throw new Error("chat request failed");
+      }
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: reply,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } catch {
+      setChatError("Unable to reach the live assistant right now. Try again in a moment.");
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-fallback-${Date.now()}`,
+          role: "assistant",
+          content: "I can still help with general dashboard questions, but the live assistant service is temporarily unavailable.",
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  const handlePrimeEmergencyPrompt = () => {
+    if (!latest) {
+      setChatError("Live vitals are required to prepare the emergency brief prompt.");
+      return;
+    }
+
+    setChatError(null);
+    setChatInput(
+      `Emergency brief request: HR ${latest.hr}, SpO2 ${latest.spo2}, movement ${latest.movement}, status ${latest.status}, trend ${currentTrend}. Provide a 60-second checklist and a concise clinician handoff script based on emergency protocols.`,
+    );
+  };
+
+  const handleSetSimulationScenario = async (choice: SimulationChoice) => {
+    setSimulationChoice(choice);
+
+    for (const base of apiBases) {
+      try {
+        const response = await fetch(`${base}/api/simulation/scenario`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ scenario: choice }),
+        });
+
+        if (response.ok) {
+          return;
+        }
+      } catch {
+        // Try the next configured API base.
+      }
+    }
+  };
+
   if (!authReady) {
     return (
       <main className="min-h-screen bg-slate-100 p-6">
@@ -455,27 +974,10 @@ export default function Page() {
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">REVIVE Monitoring Dashboard</h1>
-              <p className="text-sm text-slate-600">Real-time Evaluation of Vitals &amp; Intelligent Virtual Emergency Support</p>
+              <p className="text-sm text-slate-600">Manual patient workflow first. Simulator is optional fallback.</p>
               {userEmail ? <p className="mt-1 text-xs text-slate-500">Signed in: {userEmail}</p> : null}
             </div>
             <div className="flex flex-col gap-2 md:items-end">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="scenario-selector">
-                Scenario
-              </label>
-              <select
-                id="scenario-selector"
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-0 transition focus:border-slate-400"
-                value={scenario}
-                onChange={(event) => {
-                  setScenario(event.target.value as Scenario);
-                }}
-              >
-                {scenarios.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -487,10 +989,10 @@ export default function Page() {
           </div>
           <div className="mt-4 flex items-center gap-2 self-start rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${isConnected ? "bg-emerald-500" : "bg-red-500"}`}
+              className={`h-2.5 w-2.5 rounded-full ${isStreamLive ? "bg-emerald-500" : "bg-red-500"}`}
               aria-hidden
             />
-            {isConnected ? "LIVE" : "DISCONNECTED"}
+            {isStreamLive ? "LIVE" : "DISCONNECTED"}
           </div>
         </header>
 
@@ -531,6 +1033,139 @@ export default function Page() {
             </CardContent>
           </Card>
         ) : null}
+
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold text-slate-800">Patient Details (Primary)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Active patient</label>
+                  <select
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                    value={selectedPatientId}
+                    onChange={(event) => setSelectedPatientId(event.target.value)}
+                    disabled={patientsLoading}
+                  >
+                    <option value="">No patient selected</option>
+                    {patients.map((patient) => (
+                      <option key={patient.id} value={patient.id}>
+                        {patient.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Name</label>
+                  <input
+                    value={patientName}
+                    onChange={(event) => setPatientName(event.target.value)}
+                    placeholder="Patient name"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Age</label>
+                  <input
+                    value={patientAge}
+                    onChange={(event) => setPatientAge(event.target.value)}
+                    placeholder="e.g. 42"
+                    inputMode="numeric"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</label>
+                  <input
+                    value={patientNotes}
+                    onChange={(event) => setPatientNotes(event.target.value)}
+                    placeholder="Optional notes"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleCreatePatient()}
+                  disabled={patientSaving}
+                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {patientSaving ? "Saving..." : "Save patient"}
+                </button>
+                {patientsError ? <p className="text-xs text-red-600">{patientsError}</p> : null}
+                {patientSaveError ? <p className="text-xs text-red-600">{patientSaveError}</p> : null}
+                {patientSaveMessage ? <p className="text-xs text-emerald-700">{patientSaveMessage}</p> : null}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold text-slate-800">REVIVE Assistant</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="max-h-72 space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  {chatMessages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 shadow-sm ${
+                          message.role === "user"
+                            ? "bg-slate-900 text-white"
+                            : "border border-slate-200 bg-white text-slate-700"
+                        }`}
+                      >
+                        <p>{message.content}</p>
+                        <p className={`mt-1 text-[11px] ${message.role === "user" ? "text-slate-300" : "text-slate-400"}`}>
+                          {formatClockLabel(message.timestamp)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Ask anything
+                  </label>
+                  <textarea
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSendChatMessage();
+                      }
+                    }}
+                    rows={3}
+                    placeholder="Ask about the dashboard, workflow, or anything general..."
+                    className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-slate-500">
+                      Gemini drives live RAG replies in quick format; responses include short escalation-focused guidance.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleSendChatMessage()}
+                      disabled={chatSending}
+                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {chatSending ? "Thinking..." : "Send message"}
+                    </button>
+                  </div>
+                  {chatError ? <p className="mt-2 text-xs text-red-600">{chatError}</p> : null}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
 
         <section className="grid grid-cols-1 gap-6 rounded-2xl bg-slate-950 p-6 shadow-sm ring-1 ring-slate-800 md:grid-cols-2">
           <div>
@@ -663,47 +1298,138 @@ export default function Page() {
         </section>
 
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Card className="rounded-2xl border-l-4 border-l-red-500 shadow-sm">
+          <Card className="rounded-2xl border-l-4 border-l-slate-500 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-base font-semibold text-slate-800">⚡ Instant Action</CardTitle>
+              <CardTitle className="text-base font-semibold text-slate-800">Threat Level</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-6 text-slate-700">
-                {latest?.instant_action && latest.instant_action.trim().length > 0
-                  ? latest.instant_action
-                  : "No emergency detected"}
-              </p>
+              <div className={`inline-flex rounded-lg px-4 py-2 text-lg font-bold tracking-wide ${threatStyle.chip}`}>
+                {threatLevel}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-slate-700">{threatStyle.note}</p>
+
+              <div className="mt-4 border-t border-slate-200 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Escalation brief</p>
+                {isCritical ? (
+                  veteranBrief ? (
+                    <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">{veteranBrief}</p>
+                  ) : (
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      Escalation brief is preparing. Continue oxygen escalation and 60-second reassessment.
+                    </p>
+                  )
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    No escalation brief required while risk level is non-critical.
+                  </p>
+                )}
+
+                {isCritical ? (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trigger rule</p>
+                    <p className="mt-1 text-xs text-slate-700">
+                      Trigger rapid response if SpO2 stays below 90 for two checks or trend remains critical.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             </CardContent>
           </Card>
 
           <Card className="rounded-2xl border-l-4 border-l-blue-500 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-base font-semibold text-slate-800">📋 Detailed Guidance</CardTitle>
+              <CardTitle className="text-base font-semibold text-slate-800">Further Actions Needed</CardTitle>
             </CardHeader>
             <CardContent>
-              {latest?.detailed_steps && latest.detailed_steps.length > 0 ? (
+              {isCritical ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Emergency support active</p>
+                    <p className="mt-1 text-sm font-medium leading-6 text-red-900">
+                      {emergencyAction ||
+                        "Critical telemetry detected. Start airway, breathing, and circulation checks immediately."}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Protocol assist</p>
+                    {emergencySteps.length > 0 ? (
+                      <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm leading-6 text-slate-700">
+                        {emergencySteps.slice(0, 2).map((step, index) => (
+                          <li key={`${step}-${index}`}>{step}</li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="mt-1 text-sm leading-6 text-slate-700">
+                        Gemini-backed protocol retrieval is preparing response guidance. Continue baseline emergency steps.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rapid Handoff Snapshot</p>
+                    <p className="mt-1 text-sm text-slate-700">{emergencyHandoffSnapshot}</p>
+                    <p className="mt-1 text-xs text-slate-500">Last telemetry: {latest ? formatClockLabel(latest.timestamp) : "N/A"}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePrimeEmergencyPrompt}
+                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-700"
+                  >
+                    Prepare emergency brief
+                  </button>
+                </div>
+              ) : emergencyAction ? (
+                <p className="text-sm leading-6 text-slate-700">{emergencyAction}</p>
+              ) : (
+                <p className="text-sm leading-6 text-slate-700">
+                  Continue observation, maintain oxygenation, and re-evaluate trend after the next vital updates.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl border-l-4 border-l-red-500 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold text-slate-800">Emergency Protocols</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isCritical && latest?.detailed_steps && latest.detailed_steps.length > 0 ? (
                 <ol className="list-decimal space-y-1 pl-5 text-sm leading-6 text-slate-700">
                   {latest.detailed_steps.map((step, index) => (
                     <li key={`${step}-${index}`}>{step}</li>
                   ))}
                 </ol>
+              ) : isCritical ? (
+                <p className="text-sm leading-6 text-slate-700">
+                  Gemini is assembling retrieved protocol context. Continue core life-support actions while guidance finalizes.
+                </p>
               ) : (
-                <p className="text-sm leading-6 text-slate-700">Monitoring patient...</p>
+                <p className="text-sm leading-6 text-slate-700">No emergency protocol required while patient status remains calm.</p>
               )}
             </CardContent>
           </Card>
-
-          <Card className={`rounded-2xl shadow-sm transition-colors ${timerFlash ? "bg-amber-100" : "bg-white"}`}>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold text-slate-800">Golden Hour Support Timer</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="font-mono text-5xl font-bold tracking-widest text-slate-900">{formatTimer(timerSeconds)}</div>
-              <p className="mt-3 text-sm text-slate-600">Auto-resets every 2 minutes for patient recheck.</p>
-              {timerFlash ? <p className="mt-2 text-sm font-semibold text-amber-700">Recheck patient now.</p> : null}
-            </CardContent>
-          </Card>
         </section>
+      </div>
+
+      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-1 rounded-full bg-white/20 px-2 py-1 opacity-25 shadow-sm ring-1 ring-slate-300/40 backdrop-blur-md transition hover:opacity-100 focus-within:opacity-100">
+        {simulationChoices.map((choice) => (
+          <button
+            key={choice.value}
+            type="button"
+            onClick={() => void handleSetSimulationScenario(choice.value)}
+            aria-label={`Switch simulation to ${choice.label}`}
+            title={choice.label}
+            className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold transition ${
+              simulationChoice === choice.value
+                ? "bg-slate-900 text-white"
+                : "bg-white/70 text-slate-700 hover:bg-white"
+            }`}
+          >
+            {choice.value}
+          </button>
+        ))}
       </div>
     </main>
   );

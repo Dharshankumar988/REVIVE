@@ -69,7 +69,7 @@ async def run_cli() -> None:
     sender = VitalsSender(endpoint_url=args.endpoint)
     engine = SimulationEngine(sender=sender, interval_seconds=args.interval)
 
-    await engine.start()
+    print("[SIM] Engine is idle. Choose scenario 1-5, then press 's' to start.")
     print(MENU)
 
     while True:

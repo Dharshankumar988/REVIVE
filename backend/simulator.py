@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Literal
 
-Scenario = Literal["Stable", "Gradual Decline", "Sudden Cardiac Event"]
+Scenario = Literal["Stable", "Gradual Decline", "Sudden Cardiac Event", "Cardiac Arrest"]
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -44,10 +44,15 @@ async def vitals_stream(
                 spo2 = _clamp(spo2 - random.uniform(1.5, 4), 72, 98)
                 movement = _clamp(movement + random.uniform(-6, 12), 0, 60)
 
+        elif scenario == "Cardiac Arrest":
+            hr = _clamp(hr + random.uniform(-40, 10), 0, 40)
+            spo2 = _clamp(spo2 - random.uniform(1.5, 5), 40, 85)
+            movement = _clamp(movement + random.uniform(-4, 1), 0, 3)
+
         else:
             raise ValueError(
                 f"Unknown scenario '{scenario}'. "
-                "Use 'Stable', 'Gradual Decline', or 'Sudden Cardiac Event'."
+                "Use 'Stable', 'Gradual Decline', 'Sudden Cardiac Event', or 'Cardiac Arrest'."
             )
 
         yield {

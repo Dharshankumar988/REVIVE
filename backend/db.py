@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from supabase import Client, create_client
+
+try:
+    from supabase import Client, create_client
+except Exception:  # pragma: no cover - optional runtime dependency
+    Client = Any  # type: ignore[misc,assignment]
+    create_client = None  # type: ignore[assignment]
 
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -24,6 +29,10 @@ def _get_supabase_client() -> Client | None:
 
     if _supabase_client is not None:
         return _supabase_client
+
+    if create_client is None:
+        logger.warning("Supabase package is not installed. Persistence features are disabled.")
+        return None
 
     if not _SUPABASE_URL or not _SUPABASE_SERVICE_ROLE_KEY:
         logger.warning(

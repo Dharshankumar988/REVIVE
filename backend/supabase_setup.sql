@@ -231,6 +231,46 @@ as $$
   );
 $$;
 
+create or replace function public.bootstrap_first_admin(target_user_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  caller_id uuid := auth.uid();
+  approved_admin_count bigint;
+begin
+  if caller_id is null or caller_id <> target_user_id then
+    return false;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('revive.bootstrap_first_admin'));
+
+  select count(*)
+    into approved_admin_count
+  from public.profiles
+  where role = 'admin' and is_approved = true;
+
+  if approved_admin_count > 0 then
+    return false;
+  end if;
+
+  update public.profiles
+  set role = 'admin',
+      is_approved = true,
+      approved_at = now(),
+      approved_by = target_user_id
+  where id = target_user_id
+    and is_approved = false;
+
+  return found;
+end;
+$$;
+
+revoke all on function public.bootstrap_first_admin(uuid) from public;
+grant execute on function public.bootstrap_first_admin(uuid) to authenticated;
+
 -- Seed fallback RAG corpus so retrieval is never empty.
 insert into public.rag_documents (title, protocol_type, body, metadata)
 values
@@ -393,14 +433,30 @@ create policy rag_chunks_admin_write
 -- ----------------------------------------------------------------------
 -- User role assignment after creating users in Supabase Auth UI
 -- ----------------------------------------------------------------------
+-- Admins are simply rows in public.profiles where role = 'admin'.
+-- You can promote/demote users directly in the table editor or with SQL.
+--
+-- Promote one or more users to admin:
 -- update public.profiles
 -- set role = 'admin'
 --   , is_approved = true
 --   , approved_at = now()
 -- where email in ('admin@revive.com', 'admin2@revive.com');
 --
+-- Demote admin back to normal user:
+-- update public.profiles
+-- set role = 'user'
+-- where email = 'admin2@revive.com';
+--
 -- update public.profiles
 -- set role = 'user'
 --   , is_approved = true
 --   , approved_at = now()
 -- where email in ('user@revive.com');
+
+-- ----------------------------------------------------------------------
+-- Demo-friendly approval model
+-- ----------------------------------------------------------------------
+-- Signup inserts into auth.users and the trigger creates public.profiles
+-- with is_approved = false by default.
+-- Admins simply approve users by updating public.profiles.is_approved = true.

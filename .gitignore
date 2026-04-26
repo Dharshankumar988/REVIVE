@@ -1,6 +1,8 @@
 # Ignore backend and frontend environment files
 backend/.env
 frontend/.env.local
+.env
+.env.*
 
 # Ignore backend virtual environment
 backend/.venv/

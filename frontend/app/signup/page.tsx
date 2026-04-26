@@ -9,6 +9,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 export default function SignupPage() {
   const router = useRouter();
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -46,8 +47,15 @@ export default function SignupPage() {
     setMessage(null);
     setErrorMessage(null);
 
+    const normalizedName = fullName.trim();
+    if (!normalizedName) {
+      setLoading(false);
+      setErrorMessage("Name is required.");
+      return;
+    }
+
     try {
-      const result = await signUp(email, password);
+      const result = await signUp(email, password, normalizedName);
       const { data, error } = result;
 
       if (error) {
@@ -62,9 +70,8 @@ export default function SignupPage() {
         return;
       }
 
-      setMessage("Signup successful. Confirm your email if required, then wait for admin approval.");
+      setMessage("Signup successful. Wait for admin approval before logging in.");
     } catch (error: any) {
-      console.error("Sign up error:", error);
       setErrorMessage(`Unable to sign up: ${error.message || "Unknown error"}. Check Supabase configuration.`);
     } finally {
       setLoading(false);
@@ -75,12 +82,26 @@ export default function SignupPage() {
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex justify-center">
-          <img src="/revive-logo.svg" alt="REVIVE logo" className="h-20 w-auto" />
+          <img src="/revive-logo.svg" alt="REVIVE logo" className="h-24 w-auto" />
         </div>
         <h1 className="text-2xl font-semibold text-slate-900">Sign up</h1>
         <p className="mt-1 text-sm text-slate-600">Create your REVIVE account. Admin approval is required before use.</p>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="full-name">
+              Name
+            </label>
+            <input
+              id="full-name"
+              type="text"
+              required
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-slate-500"
+            />
+          </div>
+
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="email">
               Email

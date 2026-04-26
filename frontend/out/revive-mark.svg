@@ -1,0 +1,7 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="REVIVE mark">
+  <rect width="256" height="256" rx="40" fill="#ffffff"/>
+  <g fill="#0b0f19" stroke="#0b0f19" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M68 46h70c35 0 63 28 63 63 0 26-16 49-39 58l51 59h-36l-43-50H68V46zm38 34v56h45c15 0 28-12 28-28s-13-28-28-28h-45z"/>
+    <polyline fill="none" points="62,140 83,140 93,155 108,111 125,166 138,137 153,137"/>
+  </g>
+</svg>

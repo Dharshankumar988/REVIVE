@@ -1,0 +1,17 @@
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">REVIVE Logo</title>
+  <desc id="desc">Stylized R with heartbeat mark and REVIVE wordmark.</desc>
+  <rect width="640" height="640" fill="#ffffff"/>
+  <g fill="#0b0f19" stroke="#0b0f19" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M220 120h155c52 0 95 43 95 95 0 39-24 74-59 88l82 96h-53l-71-83h-62V120zm52 52v92h101c24 0 44-20 44-46s-20-46-44-46H272z"/>
+    <polyline fill="none" points="205,275 255,275 275,307 302,214 335,322 360,273 390,273"/>
+  </g>
+  <g fill="#0b0f19" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">
+    <text x="320" y="475" font-size="72" letter-spacing="24">REVIVE</text>
+  </g>
+  <g stroke="#0b0f19" stroke-width="4" fill="none">
+    <line x1="210" y1="520" x2="290" y2="520"/>
+    <line x1="350" y1="520" x2="430" y2="520"/>
+  </g>
+  <path d="M320 505h15v15h15v15h-15v15h-15v-15h-15v-15h15z" fill="#0b0f19"/>
+</svg>

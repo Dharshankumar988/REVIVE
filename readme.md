@@ -1,80 +1,129 @@
-# 🚑 REVIVE
-**Real-time Evaluation of Vitals & Intelligent Virtual Emergency Support**
+# REVIVE
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Next.js-black?style=flat&logo=next.js)](https://nextjs.org/)
-[![Groq](https://img.shields.io/badge/Inference-Groq-orange)](https://groq.com/)
+Production-ready full-stack setup with:
+- `frontend/`: Next.js app deployed on Vercel.
+- `backend/`: FastAPI stateless API deployed on Google Cloud Run.
 
-REVIVE is an AI-assisted emergency response and decision support system designed to assist clinicians and responders during critical situations. By monitoring patient vital signs in real-time and utilizing a dual-layer AI architecture (Groq + Gemini), the system identifies life-threatening anomalies and provides immediate, actionable guidance during the **Golden Hour**.
+## Architecture
 
----
+The backend now follows an app-package layout:
 
-## 🧠 Overview
-In medical emergencies, the **"Golden Hour"** is the window where rapid intervention significantly improves survival chances. REVIVE bridges the gap between monitoring and action by transforming raw physiological data into structured emergency protocols.
+```text
+backend/
+  app/
+    api/routes.py              # HTTP + WebSocket routes
+    core/config.py             # environment configuration
+    schemas/requests.py        # request models (JSON payloads)
+    services/
+      monitoring.py            # vitals risk/trend logic
+      processor.py             # vitals/chat processing pipeline
+      runtime.py               # in-memory runtime state
+      simulation.py            # auto simulator service
+      ws.py                    # WebSocket connection manager
+    main.py                    # FastAPI app factory
+  Dockerfile                   # Cloud Run-ready container
+  requirements.txt             # includes gunicorn + uvicorn worker
+  .env.example                 # backend environment template
 
-## ⚙️ Working Principle
-The system operates through a 4-stage pipeline:
-1. **📡 Continuous Monitoring:** Tracks Heart Rate, Oxygen Saturation (SpO₂), and Movement via simulated streams.
-2. **🚨 Real-Time Detection:** Rule-based thresholding identifies sudden spikes, drops, or cessation of movement.
-3. **🔍 Historical Analysis:** Compares current data against baseline trends to detect gradual deterioration (e.g., progressive hypoxia).
-4. **🚑 Action Guidance:** Provides dynamic, step-by-step instructions based on risk classification: **Normal, Warning, or Critical.**
+frontend/
+  app/page.tsx                 # dashboard UI + API calls
+  lib/api.ts                   # API/WS base URL resolution
+  .env.example                 # frontend environment template
+```
 
-## 🏗️ Tech Stack
-* **Frontend:** Next.js 14, Tailwind CSS, shadcn/ui, Recharts.
-* **Backend:** FastAPI (Python), PostgreSQL, SQLAlchemy.
-* **Real-time:** WebSockets for low-latency vitals streaming.
-* **AI Engine (Speed):** **Groq API** (Llama-3.3-70b) for sub-second "Instant Action" responses.
-* **AI Engine (Depth):** **Google Gemini API** + **ChromaDB** (RAG) for detailed medical protocol retrieval.
-* **Mobile Wrapper:** **Ionic Capacitor** for native Android/iOS deployment.
+## Stateless API Behavior
 
-## 🤖 AI Architecture: "AI Assists, Humans Act"
-REVIVE uses a unique hybrid AI strategy:
-* **Groq Layer:** Triggers instantly upon anomaly detection to provide a 1-sentence life-saving instruction (e.g., "Check airway now").
-* **Gemini Layer:** Performs **Retrieval-Augmented Generation (RAG)** to provide deep-dive explanations and a 2-minute "Golden Hour" support timer for repeated tasks like pulse checks.
+All backend interactions are request/response based with structured JSON.
+No CLI prompts are required for backend operations.
 
----
+Key endpoints:
+- `GET /healthz` health check.
+- `POST /api/vitals` ingest vitals payload.
+- `GET /api/vitals/latest` fetch latest processed vitals.
+- `POST /api/chat` assistant response endpoint.
+- `GET /api/simulation/scenario` fetch active simulation mode.
+- `POST /api/simulation/scenario` update simulation mode by JSON.
+- `POST /api/process` simple data processing endpoint (`average|sum|min|max`).
+- `GET /` service status.
+- `WS /ws/vitals` real-time stream.
 
-## 🚀 Getting Started
+## Local Development
 
-### Prerequisites
-* Python 3.10+
-* Node.js 18+
-* Google Gemini API Key
-* Groq API Key
+### 1. Backend
 
-### Installation
-
-1. **Clone the Repository:**
-   ```bash
-   git clone [https://github.com/your-username/revive-emergency-ai.git](https://github.com/your-username/revive-emergency-ai.git)
-   cd revive-emergency-ai
-
-   Backend Setup:
-
-Bash
+```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env      # Add your API keys to this file
-python main.py
-Frontend Setup:
+copy .env.example .env
+uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+```
 
-Bash
-cd ../frontend
+### 2. Frontend
+
+```bash
+cd frontend
 npm install
+copy .env.example .env.local
 npm run dev
-📱 Mobile Deployment
-To generate the Android/iOS application using Capacitor:
+```
 
-Bash
-npm run build
-npx cap add android
-npx cap copy
-npx cap open android
-🔐 Safety Disclaimer
-This project is a decision-support prototype. It is intended for educational and demonstration purposes only. It is not a certified medical device. In a real emergency, always prioritize the instructions of qualified healthcare providers and local emergency services (e.g., 911, 999, 112).
+Ensure in `frontend/.env.local`:
+- `NEXT_PUBLIC_API_URL=http://localhost:8080`
+- `NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws/vitals`
 
-📄 License
-Distributed under the MIT License. See LICENSE for more information.
+## Deployment Guide
+
+### Deploy Frontend on Vercel (Step by Step)
+
+1. Push your repository to GitHub.
+2. Open Vercel and click `Add New -> Project`.
+3. Import this repository.
+4. Set `Root Directory` to `frontend`.
+5. Framework preset should auto-detect as `Next.js`.
+6. Configure environment variables in Vercel project settings:
+   - `NEXT_PUBLIC_API_URL=https://<your-cloud-run-backend-url>`
+   - `NEXT_PUBLIC_WS_URL=wss://<your-cloud-run-backend-host>/ws/vitals`
+   - `NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>`
+7. Click `Deploy`.
+8. After deploy, test:
+   - page loads,
+   - dashboard can call `/api/vitals/latest` via backend URL,
+   - chat endpoint returns responses.
+
+### Deploy Backend on Google Cloud Run (Step by Step)
+
+1. Install and authenticate Google Cloud CLI:
+   - `gcloud auth login`
+   - `gcloud config set project <PROJECT_ID>`
+2. Enable required services:
+   - `gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com`
+3. From repo root, build backend container:
+   - `gcloud builds submit --tag gcr.io/<PROJECT_ID>/revive-backend ./backend`
+4. Deploy to Cloud Run:
+   - `gcloud run deploy revive-backend --image gcr.io/<PROJECT_ID>/revive-backend --platform managed --region <REGION> --allow-unauthenticated --port 8080`
+5. Set runtime environment variables on Cloud Run service:
+   - `APP_ENV=production`
+   - `LOG_LEVEL=INFO`
+   - `CORS_ORIGINS=https://<your-vercel-domain>`
+   - `GROQ_API_KEY=<key>`
+   - `GEMINI_API_KEY=<key>`
+   - `SUPABASE_URL=<url>`
+   - `SUPABASE_SERVICE_ROLE_KEY=<key>`
+6. Re-deploy after env vars update (or set via Cloud Run console and deploy revision).
+7. Verify backend health:
+   - `https://<cloud-run-url>/healthz`
+8. Update Vercel env vars to the Cloud Run URL and redeploy frontend.
+
+## Scaling Notes
+
+- Cloud Run auto-scales by request volume.
+- Gunicorn with Uvicorn workers is configured in Dockerfile for production serving.
+- CORS is environment-driven via `CORS_ORIGINS`.
+- Frontend uses environment-based API routing (`frontend/lib/api.ts`) and development-only localhost fallbacks.
+
+## Safety Disclaimer
+
+This project is a decision-support prototype for educational and demonstration use only. It is not a certified medical device.
