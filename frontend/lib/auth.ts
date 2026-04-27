@@ -10,12 +10,20 @@ type LegacySignInResult = {
   error?: unknown;
 };
 
+type AuthUser = {
+  id?: string;
+} & Record<string, unknown>;
+
+type AuthSession = {
+  user?: AuthUser | null;
+} & Record<string, unknown>;
+
 type AuthResult = {
   data: {
-    user: unknown | null;
-    session: unknown | null;
+    user: AuthUser | null;
+    session: AuthSession | null;
   };
-  error: Error | unknown | null;
+  error: Error | null;
 };
 
 function toAuthError(error: unknown): Error {
@@ -81,16 +89,19 @@ function normalizeAuthResult(result: unknown): AuthResult {
     error?: unknown;
   };
 
+  const rawUser = authResult?.data?.user;
+  const rawSession = authResult?.data?.session;
+
   return {
     data: {
-      user: authResult?.data?.user ?? null,
-      session: authResult?.data?.session ?? null,
+      user: rawUser && typeof rawUser === "object" ? (rawUser as AuthUser) : null,
+      session: rawSession && typeof rawSession === "object" ? (rawSession as AuthSession) : null,
     },
     error: authResult?.error ? toAuthError(authResult.error) : null,
   };
 }
 
-export async function signUp(email: string, password: string, fullName: string) {
+export async function signUp(email: string, password: string, fullName: string): Promise<AuthResult> {
   try {
     const supabase = getSupabaseClient();
     if (!supabase) {
@@ -120,7 +131,7 @@ export async function signUp(email: string, password: string, fullName: string) 
   }
 }
 
-export async function signIn(email: string, password: string) {
+export async function signIn(email: string, password: string): Promise<AuthResult> {
   try {
     const supabase = getSupabaseClient();
     if (!supabase) {
