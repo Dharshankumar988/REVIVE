@@ -17,6 +17,13 @@ class SimulationService:
         "4": "Cardiac Arrest",
     }
 
+    _LABEL_TO_CHOICE: dict[str, str] = {
+        "stable": "1",
+        "gradual_decline": "2",
+        "sudden_cardiac_event": "3",
+        "cardiac_arrest": "4",
+    }
+
     def __init__(self, ingest_fn: Callable[[IncomingVital], Awaitable[dict[str, Any]]]) -> None:
         self._ingest_fn = ingest_fn
         self.active_choice = "1"
@@ -41,7 +48,15 @@ class SimulationService:
         self._task = None
 
     def set_scenario(self, scenario: str) -> None:
-        self.active_choice = scenario
+        normalized = scenario.strip()
+        if normalized in self.SCENARIOS:
+            self.active_choice = normalized
+            return
+
+        label_key = normalized.lower().replace(" ", "_")
+        mapped_choice = self._LABEL_TO_CHOICE.get(label_key)
+        if mapped_choice is not None:
+            self.active_choice = mapped_choice
 
     def get_scenario_info(self) -> dict[str, Any]:
         return {
