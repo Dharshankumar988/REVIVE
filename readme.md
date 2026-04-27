@@ -1,160 +1,187 @@
-# REVIVE
+```markdown
+# 🚑 REVIVE  
 
-Production-ready full-stack setup with:
-- `frontend/`: Next.js app deployed on Vercel.
-- `backend/`: FastAPI stateless API deployed on Google Cloud Run.
+Real-time patient vitals monitoring dashboard with emergency-oriented decision support.  
 
-Also includes Render deployment support via `render.yaml`.
+---
 
-## Architecture
+## 🌟 Overview  
 
-The backend now follows an app-package layout:
+REVIVE is a **full-stack monitoring system** that simulates, processes, and visualizes patient vitals in real time.  
 
-```text
-backend/
-  app/
-    api/routes.py              # HTTP + WebSocket routes
-    core/config.py             # environment configuration
-    schemas/requests.py        # request models (JSON payloads)
-    services/
-      monitoring.py            # vitals risk/trend logic
-      processor.py             # vitals/chat processing pipeline
-      runtime.py               # in-memory runtime state
-      simulation.py            # auto simulator service
-      ws.py                    # WebSocket connection manager
-    main.py                    # FastAPI app factory
-  Dockerfile                   # Cloud Run-ready container
-  requirements.txt             # includes gunicorn + uvicorn worker
-  .env.example                 # backend environment template
+It is built as two deployable services:  
+- 🌐 Frontend: Next.js (Dashboard UI)  
+- ⚙️ Backend: FastAPI (Deployed on Render)  
 
-frontend/
-  app/page.tsx                 # dashboard UI + API calls
-  lib/api.ts                   # API/WS base URL resolution
-  .env.example                 # frontend environment template
+Supports **real-time streaming, AI guidance, and simulation-driven testing**. :contentReference[oaicite:0]{index=0}  
+
+---
+
+## ⚡ Key Features  
+
+- 🔄 **Real-time vitals streaming** via WebSockets  
+- 📊 **Live dashboard with charts & risk indicators**  
+- 🧠 **AI-powered emergency guidance (with fallback support)**  
+- 🧪 **Built-in simulation engine for realistic scenarios**  
+- 🔐 **Role-based access (admin approval system)**  
+- ☁️ **Cloud deployment ready (Render + Vercel)**  
+
+---
+
+## 🏗️ Architecture  
+
 ```
 
-## Stateless API Behavior
+Frontend (Next.js)
+│
+├── Auth + Dashboard + Charts
+│
+▼
+Backend (FastAPI on Render)
+│
+├── REST APIs + WebSocket
+├── Processing Pipeline (risk + anomalies)
+├── Simulation Engine
+▼
+Supabase (DB + Auth + RAG)
 
-All backend interactions are request/response based with structured JSON.
-No CLI prompts are required for backend operations.
-
-Key endpoints:
-- `GET /healthz` health check.
-- `POST /api/vitals` ingest vitals payload.
-- `GET /api/vitals/latest` fetch latest processed vitals.
-- `POST /api/chat` assistant response endpoint.
-- `GET /api/simulation/scenario` fetch active simulation mode.
-- `POST /api/simulation/scenario` update simulation mode by JSON.
-- `POST /api/process` simple data processing endpoint (`average|sum|min|max`).
-- `GET /` service status.
-- `WS /ws/vitals` real-time stream.
-
-## Local Development
-
-### 1. Backend
-
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-### 2. Frontend
+---
 
-```bash
-cd frontend
-npm install
-copy .env.example .env.local
-npm run dev
+## 🔌 Core API  
+
+- `GET /healthz` → Health check  
+- `POST /api/vitals` → Ingest vitals  
+- `GET /api/vitals/latest` → Latest processed data  
+- `POST /api/chat` → AI assistant  
+- `POST /api/process` → Data operations  
+- `WS /ws/vitals` → Live streaming  
+
+---
+
+## 🧠 Processing Engine  
+
+Every incoming vital is processed in real time:  
+
+- 🚨 **Risk Detection**  
+  - Critical / Warning / Normal classification  
+
+- 📉 **Trend Analysis**  
+  - Gradual decline detection  
+  - Sudden spike detection  
+
+- ⚠️ **Anomaly Detection**  
+  - Rolling baseline comparison  
+  - SpO₂ decline tracking  
+
+- 📡 **Live Broadcast**  
+  - Results pushed instantly via WebSocket  
+
+---
+
+## 🤖 AI + RAG System  
+
+- 🧠 Generates **emergency guidance & responses**  
+- 🔁 Uses **Gemini / Groq (with fallback)**  
+- 📚 Retrieval via **Supabase RAG or local fallback**  
+- 🛡️ Designed for **safe, concise, non-diagnostic output**  
+
+---
+
+## 🧪 Simulation System  
+
+- 🎭 Built-in **auto-simulator (runs on backend)**  
+- 🧰 Supports multiple scenarios:  
+  - Stable  
+  - Gradual Decline  
+  - Sudden Cardiac Event  
+  - Cardiac Arrest  
+
+- ⚡ Enables **real-time demo without external devices**  
+
+---
+
+## 🗄️ Data & Auth  
+
+- 🧩 Supabase used for:  
+  - Auth (with admin approval)  
+  - Patient & vitals storage  
+  - AI guidance logs  
+  - RAG document retrieval  
+
+- 🔐 Role-based access control with **first-admin bootstrap**  
+
+---
+
+## 🚀 Deployment  
+
+- ⚙️ Backend → **Render (Docker service)**  
+- 🌐 Frontend → **Vercel**  
+- 🗄️ Database → **Supabase**  
+
+✔️ Designed for **quick deploy + production scalability**  
+
+---
+
+## 🔄 Data Flow  
+
 ```
 
-Ensure in `frontend/.env.local`:
-- `NEXT_PUBLIC_API_URL=http://localhost:8080`
-- `NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws/vitals`
+Simulator → Backend → Processing → AI → Database → WebSocket → Frontend
 
-## Deployment Guide
+```
 
-### Deploy Full Stack on Render (No Billing Setup)
+- Real-time updates reflected instantly on dashboard  
+- Polling fallback ensures reliability  
 
-This repository includes a Render Blueprint at `render.yaml` with two services:
-- `revive-backend` (Docker, root `backend/`)
-- `revive-frontend` (Node, root `frontend/`)
+---
 
-#### Steps
+## 💪 Strengths  
 
-1. Push your latest code to GitHub.
-2. In Render, click `New +` -> `Blueprint`.
-3. Connect your GitHub repository and select this repo.
-4. Render reads `render.yaml` and creates both services.
-5. In Render service settings, fill secret env vars:
-    - Backend:
-       - `CORS_ORIGINS=https://<your-frontend-render-domain>`
-       - `SUPABASE_URL=<your-supabase-url>`
-       - `SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>`
-       - `GEMINI_API_KEY=<optional>`
-       - `GROQ_API_KEY=<optional>`
-    - Frontend:
-       - `NEXT_PUBLIC_API_URL=https://<your-backend-render-domain>`
-       - `NEXT_PUBLIC_WS_URL=wss://<your-backend-render-domain>/ws/vitals`
-       - `NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>`
-       - `NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>`
-6. Trigger a redeploy after env updates.
-7. Verify:
-    - Backend: `https://<backend-domain>/healthz`
-    - Frontend loads and can read vitals/chat from backend.
+- ⚡ Real-time + fallback architecture  
+- 🧠 Intelligent processing + AI integration  
+- 🧪 Strong demo capability via simulation  
+- 🔐 Practical auth + role system  
+- ☁️ Deployment-ready setup  
 
-### Deploy Frontend on Vercel (Step by Step)
+---
 
-1. Push your repository to GitHub.
-2. Open Vercel and click `Add New -> Project`.
-3. Import this repository.
-4. Set `Root Directory` to `frontend`.
-5. Framework preset should auto-detect as `Next.js`.
-6. Configure environment variables in Vercel project settings:
-   - `NEXT_PUBLIC_API_URL=https://<your-cloud-run-backend-url>`
-   - `NEXT_PUBLIC_WS_URL=wss://<your-cloud-run-backend-host>/ws/vitals`
-   - `NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>`
-7. Click `Deploy`.
-8. After deploy, test:
-   - page loads,
-   - dashboard can call `/api/vitals/latest` via backend URL,
-   - chat endpoint returns responses.
+## ⚠️ Limitations  
 
-### Deploy Backend on Google Cloud Run (Step by Step)
+- No automated test suite yet  
+- Dual simulator paths can add complexity  
+- Some config values not fully wired to runtime  
 
-1. Install and authenticate Google Cloud CLI:
-   - `gcloud auth login`
-   - `gcloud config set project <PROJECT_ID>`
-2. Enable required services:
-   - `gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com`
-3. From repo root, build backend container:
-   - `gcloud builds submit --tag gcr.io/<PROJECT_ID>/revive-backend ./backend`
-4. Deploy to Cloud Run:
-   - `gcloud run deploy revive-backend --image gcr.io/<PROJECT_ID>/revive-backend --platform managed --region <REGION> --allow-unauthenticated --port 8080`
-5. Set runtime environment variables on Cloud Run service:
-   - `APP_ENV=production`
-   - `LOG_LEVEL=INFO`
-   - `CORS_ORIGINS=https://<your-vercel-domain>`
-   - `GROQ_API_KEY=<key>`
-   - `GEMINI_API_KEY=<key>`
-   - `SUPABASE_URL=<url>`
-   - `SUPABASE_SERVICE_ROLE_KEY=<key>`
-6. Re-deploy after env vars update (or set via Cloud Run console and deploy revision).
-7. Verify backend health:
-   - `https://<cloud-run-url>/healthz`
-8. Update Vercel env vars to the Cloud Run URL and redeploy frontend.
+---
 
-## Scaling Notes
+## 🛡️ Disclaimer  
 
-- Cloud Run auto-scales by request volume.
-- Gunicorn with Uvicorn workers is configured in Dockerfile for production serving.
-- CORS is environment-driven via `CORS_ORIGINS`.
-- Frontend uses environment-based API routing (`frontend/lib/api.ts`) and development-only localhost fallbacks.
+This project is a **decision-support prototype** for learning and demonstration.  
+It is **not a certified medical system** and should not be used for clinical decisions.  
 
-## Safety Disclaimer
+---
 
-This project is a decision-support prototype for educational and demonstration use only. It is not a certified medical device.
+## ⭐ Final Note  
+
+REVIVE is built to **simulate real-world emergency monitoring systems** with:  
+
+- ⚡ Real-time streaming  
+- 🧠 AI assistance  
+- 🧪 High-quality demos  
+
+Perfect for **hackathons, research prototypes, and system design showcases** 🚀  
+```
+
+---
+
+### Why this hits the sweet spot
+
+* ✅ Professional (like real GitHub repos)
+* ✅ Includes emojis but not overdone
+* ✅ Focuses on **value + architecture + strengths**
+* ✅ Highlights **Render deployment (your setup)**
+* ✅ Great for **resume / hackathon judging**
+
+---
+
