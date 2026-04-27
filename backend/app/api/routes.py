@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -104,11 +105,45 @@ async def process_data(payload: ProcessDataRequest) -> dict[str, Any]:
 async def websocket_vitals(websocket: WebSocket) -> None:
     app = websocket.app
     runtime: RuntimeState = app.state.runtime
+    simulation: SimulationService = app.state.simulation
 
     await runtime.ws_manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            message = await websocket.receive_text()
+            if not message.strip():
+                continue
+
+            try:
+                payload = json.loads(message)
+            except json.JSONDecodeError:
+                continue
+
+            if not isinstance(payload, dict):
+                continue
+
+            if str(payload.get("type", "")).strip().lower() != "set_scenario":
+                continue
+
+            next_scenario = payload.get("scenario")
+            if next_scenario is None:
+                await websocket.send_json({"ok": False, "error": "scenario is required"})
+                continue
+
+            try:
+                active = simulation.set_scenario(next_scenario)
+            except ValueError as exc:
+                await websocket.send_json({"ok": False, "error": str(exc)})
+                continue
+
+            await websocket.send_json(
+                {
+                    "ok": True,
+                    "type": "scenario_ack",
+                    "scenario": active,
+                    "label": simulation.SCENARIOS[active],
+                }
+            )
     except WebSocketDisconnect:
         runtime.ws_manager.disconnect(websocket)
     except Exception:

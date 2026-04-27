@@ -1,7 +1,7 @@
 "use client";
 
 import { Session } from "@supabase/supabase-js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CartesianGrid,
@@ -169,6 +169,29 @@ function getThreatLevel(status: RiskStatus, trend: TrendLabel): ThreatLevel {
   return "LOW";
 }
 
+function buildLocalAssistantReply(message: string, latest?: VitalsPoint): string {
+  const lowered = message.trim().toLowerCase();
+
+  if (!lowered) {
+    return "Ask me anything about vitals, risk trend, or next-step support and I will keep it concise.";
+  }
+
+  if (lowered === "hi" || lowered === "hello" || lowered === "hey") {
+    return "Hi, I am REVIVE Assistant. I can summarize risk, suggest immediate priorities, and prepare a concise handoff line.";
+  }
+
+  if (lowered.includes("who are you") || lowered.includes("what can you do") || lowered.includes("help")) {
+    return "I am REVIVE Assistant. I can interpret the latest vitals trend, provide immediate action priorities, and generate a short escalation-ready handoff summary.";
+  }
+
+  if (!latest) {
+    return "Live assistant is temporarily unavailable. Share current HR, SpO2, and movement, and I can still give structured next-step guidance.";
+  }
+
+  const level = latest.status === "Critical" ? "high" : latest.status === "Warning" ? "elevated" : "low";
+  return `Live assistant is temporarily unavailable. Current risk is ${level} with HR ${latest.hr}, SpO2 ${latest.spo2}, movement ${latest.movement}, trend ${latest.trend ?? "stable"}. Prioritize airway-breathing-circulation checks and repeat vitals soon.`;
+}
+
 const threatStyles: Record<ThreatLevel, { chip: string; note: string }> = {
   LOW: {
     chip: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300",
@@ -222,6 +245,7 @@ export default function Page() {
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [simulationChoice, setSimulationChoice] = useState<SimulationChoice>("1");
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -360,6 +384,7 @@ export default function Page() {
 
       try {
         socket = new WebSocket(wsUrl);
+        wsRef.current = socket;
       } catch {
         candidateIndex += 1;
         retryHandle = window.setTimeout(connect, 1200);
@@ -375,6 +400,9 @@ export default function Page() {
       socket.onclose = () => {
         if (disposed) {
           return;
+        }
+        if (wsRef.current === socket) {
+          wsRef.current = null;
         }
         setIsConnected(false);
         if (!opened) {
@@ -445,6 +473,7 @@ export default function Page() {
 
     return () => {
       disposed = true;
+      wsRef.current = null;
       setIsConnected(false);
       if (retryHandle !== null) {
         window.clearTimeout(retryHandle);
@@ -926,13 +955,13 @@ export default function Page() {
         },
       ]);
     } catch {
-      setChatError("Unable to reach the live assistant right now. Try again in a moment.");
+      setChatError("Live assistant is temporarily unavailable. Showing local guidance response.");
       setChatMessages((prev) => [
         ...prev,
         {
           id: `assistant-fallback-${Date.now()}`,
           role: "assistant",
-          content: "I can still help with general dashboard questions, but the live assistant service is temporarily unavailable.",
+          content: buildLocalAssistantReply(message, latest),
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -956,6 +985,16 @@ export default function Page() {
   const handleSetSimulationScenario = async (choice: SimulationChoice) => {
     const previousChoice = simulationChoice;
     setSimulationChoice(choice);
+
+    const socket = wsRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      try {
+        socket.send(JSON.stringify({ type: "set_scenario", scenario: choice }));
+        return;
+      } catch {
+        // Fall through to HTTP API fallback path.
+      }
+    }
 
     if (apiBases.length === 0) {
       setSimulationChoice(previousChoice);
