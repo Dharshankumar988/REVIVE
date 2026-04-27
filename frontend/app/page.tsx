@@ -72,6 +72,26 @@ const simulationChoices: Array<{ value: SimulationChoice; label: Scenario }> = [
   { value: "4", label: "Cardiac Arrest" },
 ];
 
+const scenarioValueToChoice: Record<string, SimulationChoice> = {
+  "1": "1",
+  "2": "2",
+  "3": "3",
+  "4": "4",
+  stable: "1",
+  gradual_decline: "2",
+  sudden_cardiac_event: "3",
+  cardiac_arrest: "4",
+};
+
+function toSimulationChoice(raw: unknown): SimulationChoice | null {
+  if (typeof raw !== "string") {
+    return null;
+  }
+
+  const normalized = raw.trim().toLowerCase().replace(/\s+/g, "_");
+  return scenarioValueToChoice[normalized] ?? null;
+}
+
 const statusStyles: Record<RiskStatus, { label: string; chip: string; card: string }> = {
   Normal: {
     label: "NORMAL",
@@ -580,14 +600,16 @@ export default function Page() {
           const payload = (await response.json()) as {
             ok?: boolean;
             scenario?: string;
+            label?: string;
           };
 
           if (!mounted || payload.ok !== true) {
             return;
           }
 
-          if (payload.scenario === "1" || payload.scenario === "2" || payload.scenario === "3" || payload.scenario === "4") {
-            setSimulationChoice(payload.scenario);
+          const mappedChoice = toSimulationChoice(payload.scenario) ?? toSimulationChoice(payload.label);
+          if (mappedChoice) {
+            setSimulationChoice(mappedChoice);
           }
           return;
         } catch {
@@ -957,13 +979,16 @@ export default function Page() {
         const payload = (await response.json()) as {
           ok?: boolean;
           scenario?: string;
+          label?: string;
         };
 
-        if (
-          payload.ok === true &&
-          (payload.scenario === "1" || payload.scenario === "2" || payload.scenario === "3" || payload.scenario === "4")
-        ) {
-          setSimulationChoice(payload.scenario);
+        const mappedChoice =
+          payload.ok === true
+            ? toSimulationChoice(payload.scenario) ?? toSimulationChoice(payload.label)
+            : null;
+
+        if (mappedChoice) {
+          setSimulationChoice(mappedChoice);
           return;
         }
       } catch {

@@ -20,7 +20,7 @@ class ChatRequest(BaseModel):
 
 
 class SimulationScenarioRequest(BaseModel):
-    scenario: str = Field(min_length=1, max_length=64)
+    scenario: str | int = Field()
 
 
 class ProcessDataRequest(BaseModel):

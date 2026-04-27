@@ -22,6 +22,9 @@ class SimulationService:
         "gradual_decline": "2",
         "sudden_cardiac_event": "3",
         "cardiac_arrest": "4",
+        "normal": "1",
+        "tachycardia": "2",
+        "hypoxia": "3",
     }
 
     def __init__(self, ingest_fn: Callable[[IncomingVital], Awaitable[dict[str, Any]]]) -> None:
@@ -47,8 +50,8 @@ class SimulationService:
             await self._task
         self._task = None
 
-    def set_scenario(self, scenario: str) -> str:
-        normalized = scenario.strip()
+    def set_scenario(self, scenario: str | int) -> str:
+        normalized = str(scenario).strip()
         if normalized in self.SCENARIOS:
             self.active_choice = normalized
             return self.active_choice
