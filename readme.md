@@ -4,6 +4,8 @@ Production-ready full-stack setup with:
 - `frontend/`: Next.js app deployed on Vercel.
 - `backend/`: FastAPI stateless API deployed on Google Cloud Run.
 
+Also includes Render deployment support via `render.yaml`.
+
 ## Architecture
 
 The backend now follows an app-package layout:
@@ -74,6 +76,35 @@ Ensure in `frontend/.env.local`:
 - `NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws/vitals`
 
 ## Deployment Guide
+
+### Deploy Full Stack on Render (No Billing Setup)
+
+This repository includes a Render Blueprint at `render.yaml` with two services:
+- `revive-backend` (Docker, root `backend/`)
+- `revive-frontend` (Node, root `frontend/`)
+
+#### Steps
+
+1. Push your latest code to GitHub.
+2. In Render, click `New +` -> `Blueprint`.
+3. Connect your GitHub repository and select this repo.
+4. Render reads `render.yaml` and creates both services.
+5. In Render service settings, fill secret env vars:
+    - Backend:
+       - `CORS_ORIGINS=https://<your-frontend-render-domain>`
+       - `SUPABASE_URL=<your-supabase-url>`
+       - `SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>`
+       - `GEMINI_API_KEY=<optional>`
+       - `GROQ_API_KEY=<optional>`
+    - Frontend:
+       - `NEXT_PUBLIC_API_URL=https://<your-backend-render-domain>`
+       - `NEXT_PUBLIC_WS_URL=wss://<your-backend-render-domain>/ws/vitals`
+       - `NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>`
+       - `NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>`
+6. Trigger a redeploy after env updates.
+7. Verify:
+    - Backend: `https://<backend-domain>/healthz`
+    - Frontend loads and can read vitals/chat from backend.
 
 ### Deploy Frontend on Vercel (Step by Step)
 
