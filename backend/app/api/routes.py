@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from ..schemas.requests import ChatRequest, IncomingVital, ProcessDataRequest, SimulationScenarioRequest
 from ..services.processor import process_chat, process_vital
@@ -38,7 +38,10 @@ async def get_simulation_scenario(request: Request) -> dict[str, Any]:
 @router.post("/api/simulation/scenario")
 async def set_simulation_scenario(payload: SimulationScenarioRequest, request: Request) -> dict[str, Any]:
     simulation = _simulation(request)
-    simulation.set_scenario(payload.scenario)
+    try:
+        simulation.set_scenario(payload.scenario)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "ok": True,
         "scenario": simulation.active_choice,

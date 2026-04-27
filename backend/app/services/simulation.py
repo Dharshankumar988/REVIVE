@@ -47,16 +47,24 @@ class SimulationService:
             await self._task
         self._task = None
 
-    def set_scenario(self, scenario: str) -> None:
+    def set_scenario(self, scenario: str) -> str:
         normalized = scenario.strip()
         if normalized in self.SCENARIOS:
             self.active_choice = normalized
-            return
+            return self.active_choice
 
         label_key = normalized.lower().replace(" ", "_")
         mapped_choice = self._LABEL_TO_CHOICE.get(label_key)
         if mapped_choice is not None:
             self.active_choice = mapped_choice
+            return self.active_choice
+
+        valid_values = ", ".join(sorted(self.SCENARIOS.keys()))
+        valid_labels = ", ".join(self.SCENARIOS.values())
+        raise ValueError(
+            f"Unknown scenario '{scenario}'. Use one of [{valid_values}] "
+            f"or labels [{valid_labels}]."
+        )
 
     def get_scenario_info(self) -> dict[str, Any]:
         return {

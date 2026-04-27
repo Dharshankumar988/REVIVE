@@ -557,6 +557,7 @@ export default function Page() {
 
   const apiBases = [
     toApiBaseFromWs(activeWsUrl),
+    ...WS_CANDIDATE_URLS.map((candidate) => toApiBaseFromWs(candidate)),
     ...API_CANDIDATE_BASES,
   ].filter((value, index, arr): value is string => !!value && arr.indexOf(value) === index);
   const apiBaseSignature = apiBases.join("|");
@@ -931,7 +932,13 @@ export default function Page() {
   };
 
   const handleSetSimulationScenario = async (choice: SimulationChoice) => {
+    const previousChoice = simulationChoice;
     setSimulationChoice(choice);
+
+    if (apiBases.length === 0) {
+      setSimulationChoice(previousChoice);
+      return;
+    }
 
     for (const base of apiBases) {
       try {
@@ -943,13 +950,28 @@ export default function Page() {
           body: JSON.stringify({ scenario: choice }),
         });
 
-        if (response.ok) {
+        if (!response.ok) {
+          continue;
+        }
+
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          scenario?: string;
+        };
+
+        if (
+          payload.ok === true &&
+          (payload.scenario === "1" || payload.scenario === "2" || payload.scenario === "3" || payload.scenario === "4")
+        ) {
+          setSimulationChoice(payload.scenario);
           return;
         }
       } catch {
         // Try the next configured API base.
       }
     }
+
+    setSimulationChoice(previousChoice);
   };
 
   if (!authReady) {
