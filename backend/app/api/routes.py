@@ -67,9 +67,6 @@ async def latest_vitals(request: Request) -> dict[str, Any]:
 @router.post("/api/chat")
 async def chat(payload: ChatRequest) -> dict[str, Any]:
     message = payload.message.strip()
-    if not message:
-        return {"ok": False, "error": "Message is required."}
-
     reply = await process_chat(message, payload.context or {})
     return {
         "ok": True,

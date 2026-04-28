@@ -169,11 +169,195 @@ function getThreatLevel(status: RiskStatus, trend: TrendLabel): ThreatLevel {
   return "LOW";
 }
 
+function renderInlineBold(text: string, highlightClass: string): Array<string | JSX.Element> {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return (
+        <strong key={`bold-${index}`} className={highlightClass}>
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+
+    return <span key={`text-${index}`}>{part}</span>;
+  });
+}
+
+function renderChatContent(content: string, isUser: boolean): JSX.Element {
+  const highlightClass = isUser ? "font-semibold text-white" : "font-semibold text-slate-900";
+  const lines = content.split(/\r?\n/);
+  const blocks: Array<{ type: "paragraph"; text: string } | { type: "list"; ordered: boolean; items: string[] }> = [];
+  let listItems: string[] = [];
+  let listOrdered: boolean | null = null;
+
+  const flushList = () => {
+    if (listItems.length === 0 || listOrdered === null) {
+      listItems = [];
+      listOrdered = null;
+      return;
+    }
+
+    blocks.push({ type: "list", ordered: listOrdered, items: listItems });
+    listItems = [];
+    listOrdered = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushList();
+      continue;
+    }
+
+    const orderedMatch = line.match(/^\d+[.)]\s+(.+)$/);
+    const bulletMatch = line.match(/^[-*•]\s+(.+)$/);
+
+    if (orderedMatch || bulletMatch) {
+      const ordered = Boolean(orderedMatch);
+      const itemText = (orderedMatch?.[1] ?? bulletMatch?.[1] ?? line).trim();
+      if (listOrdered === null) {
+        listOrdered = ordered;
+      }
+      if (listOrdered !== ordered) {
+        flushList();
+        listOrdered = ordered;
+      }
+      listItems.push(itemText);
+      continue;
+    }
+
+    flushList();
+    blocks.push({ type: "paragraph", text: line });
+  }
+
+  flushList();
+
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, index) => {
+        if (block.type === "list") {
+          const ListTag = block.ordered ? "ol" : "ul";
+          const listClass = block.ordered ? "list-decimal" : "list-disc";
+          return (
+            <ListTag key={`list-${index}`} className={`${listClass} space-y-1 pl-4`}>
+              {block.items.map((item, itemIndex) => (
+                <li key={`item-${index}-${itemIndex}`}>{renderInlineBold(item, highlightClass)}</li>
+              ))}
+            </ListTag>
+          );
+        }
+
+        return (
+          <p key={`para-${index}`}>
+            {renderInlineBold(block.text, highlightClass)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 function buildLocalAssistantReply(message: string, latest?: VitalsPoint): string {
   const lowered = message.trim().toLowerCase();
 
+  const hasBleeding =
+    lowered.includes("bleeding") ||
+    lowered.includes("bleed") ||
+    lowered.includes("hemorrhage") ||
+    lowered.includes("haemorrhage") ||
+    lowered.includes("hemorrage") ||
+    lowered.includes("heamorrhage") ||
+    lowered.includes("internal bleeding") ||
+    lowered.includes("internal bleed") ||
+    lowered.includes("blood loss");
+
+  const hasLungBleed =
+    lowered.includes("hemoptysis") ||
+    lowered.includes("coughing blood") ||
+    lowered.includes("coughing up blood") ||
+    lowered.includes("lung bleeding") ||
+    lowered.includes("bleeding in lungs") ||
+    lowered.includes("bleeding in the lungs") ||
+    lowered.includes("pulmonary hemorrhage") ||
+    (hasBleeding && (lowered.includes("lung") || lowered.includes("lungs")));
+
+  const isSevere =
+    lowered.includes("severe") ||
+    lowered.includes("massive") ||
+    lowered.includes("critical") ||
+    lowered.includes("unresponsive") ||
+    lowered.includes("collapse") ||
+    lowered.includes("deteriorating");
+
   if (!lowered) {
     return "Ask me anything about vitals, risk trend, or next-step support and I will keep it concise.";
+  }
+
+  if (hasLungBleed && isSevere) {
+    return (
+      "Clinical read: severe hemoptysis risk; airway compromise likely.\n"
+      + "Priority actions: call emergency services now; keep patient upright or bleeding lung down; suction if trained; avoid oral intake.\n"
+      + "Escalation: prepare for airway support and urgent transfer for bronchoscopic/surgical control."
+    );
+  }
+
+  if (hasBleeding && isSevere) {
+    return (
+      "Clinical read: severe hemorrhage risk.\n"
+      + "Priority actions: call emergency services now; direct pressure if external; keep patient flat if no breathing distress; no oral intake.\n"
+      + "Escalation: prepare for rapid transfer, IV access, and blood products if available."
+    );
+  }
+
+  if (lowered.includes("pizza") || lowered.includes("joke") || lowered.includes("movie") || lowered.includes("game") || lowered.includes("music") || lowered.includes("weather") || lowered.includes("stock") || lowered.includes("crypto") || lowered.includes("sports") || lowered.includes("politics") || lowered.includes("meme")) {
+    return "I am trained for medical emergencies only. Ask me about a disease, symptom, vitals, drug option, red flag, or the next step, and I will answer in plain language.";
+  }
+
+  if (lowered.includes("drug") || lowered.includes("medicine") || lowered.includes("medication") || lowered.includes("what can i take") || lowered.includes("what should i take")) {
+    if (lowered.includes("headache") || lowered.includes("head ache") || lowered.includes("hedache") || lowered.includes("migraine")) {
+      return "For a simple headache, acetaminophen is usually the safest first option if there is no liver disease or allergy. Ibuprofen can help too if there is no ulcer, kidney disease, blood thinner use, or pregnancy concern. If the headache is sudden, severe, or comes with weakness, confusion, speech trouble, or vision changes, get urgent assessment instead of just treating it at home.";
+    }
+
+    if (lowered.includes("fever") || lowered.includes("temperature")) {
+      return "For fever, acetaminophen or ibuprofen may help if the person can take them safely, but hydration and watching for confusion, breathing changes, or dehydration matter more. If the fever is high or the person looks unwell, get checked.";
+    }
+
+    if (lowered.includes("allergy") || lowered.includes("hives") || lowered.includes("rash") || lowered.includes("itching")) {
+      return "For a mild allergic rash or itching, a non-drowsy antihistamine is often used if it is safe for the person. If there is swelling of the lips or tongue, wheezing, or trouble breathing, treat it as an emergency instead of waiting.";
+    }
+
+    if (lowered.includes("nausea") || lowered.includes("vomit") || lowered.includes("vomiting")) {
+      if (lowered.includes("internal bleeding") || lowered.includes("bleeding") || lowered.includes("blood") || lowered.includes("black stool") || lowered.includes("melena") || lowered.includes("coffee ground") || lowered.includes("coffee-ground")) {
+        return "Vomiting with internal bleeding is an emergency. Keep the person lying on their side if they are drowsy, do not give food, alcohol, or painkillers like ibuprofen, and get emergency help now. In hospital, the usual immediate steps are IV access, fluids or blood if needed, anti-nausea medicine such as ondansetron, and urgent evaluation for the bleeding source.";
+      }
+
+      return "For vomiting, start with small frequent sips of oral rehydration solution or clear fluids if the person can keep them down. If medication is needed, an anti-nausea medicine such as ondansetron is commonly used, and in some adults promethazine or metoclopramide may be options depending on age and other conditions. If vomiting is severe, repeated, or mixed with blood or black material, or there is abdominal pain, weakness, confusion, or dehydration, it needs urgent assessment.";
+    }
+
+    if (lowered.includes("cough") || lowered.includes("wheezing")) {
+      return "For cough or wheeze, the right medicine depends on the cause. If this is known asthma, a prescribed rescue inhaler is the first step; otherwise watch the breathing rate, SpO2, and whether it is getting worse.";
+    }
+
+    if (lowered.includes("pain") || lowered.includes("back pain") || lowered.includes("abdominal pain") || lowered.includes("stomach pain") || lowered.includes("body ache")) {
+      return "For pain without red flags, acetaminophen is usually the safest starting option, and ibuprofen can help if there is no ulcer, kidney disease, bleeding risk, or pregnancy concern. If the pain is severe, sudden, or localized with fever or vomiting, get it checked first.";
+    }
+
+    if (lowered.includes("disease") || lowered.includes("condition") || lowered.includes("illness") || lowered.includes("diagnosis") || lowered.includes("infection") || lowered.includes("stroke") || lowered.includes("diabetes") || lowered.includes("asthma") || lowered.includes("copd") || lowered.includes("sepsis") || lowered.includes("covid") || lowered.includes("flu") || lowered.includes("heart attack") || lowered.includes("kidney") || lowered.includes("liver") || lowered.includes("anemia") || lowered.includes("anaphylaxis") || lowered.includes("epilepsy") || lowered.includes("seizure") || lowered.includes("ulcer") || lowered.includes("appendicitis") || lowered.includes("pneumonia")) {
+      return "For a disease question, I can usually give four things: the likely body system involved, the first-line medicine class if it is safe, what to do right now, and the warning signs that mean urgent care or emergency support. If you name the condition, I will make it specific.";
+    }
+
+    return "Medication choice depends on the symptom, disease, age, allergies, pregnancy, and other conditions. Tell me the problem in one line and I can suggest the safest first-line option and the red flags to watch for.";
+  }
+
+  if (
+    lowered.includes("breathless") ||
+    lowered.includes("breathl") ||
+    lowered.includes("shortness of breath") ||
+    lowered.includes("trouble breathing") ||
+    lowered.includes("can't breathe") ||
+    lowered.includes("cannot breathe")
+  ) {
+    return "If this is severe breathlessness, stay upright, keep calm, avoid exertion, and seek emergency help if it is worsening. I can also explain common rescue meds, oxygen support, and precautions in plain language.";
   }
 
   if (lowered === "hi" || lowered === "hello" || lowered === "hey") {
@@ -185,11 +369,15 @@ function buildLocalAssistantReply(message: string, latest?: VitalsPoint): string
   }
 
   if (!latest) {
-    return "Live assistant is temporarily unavailable. Share current HR, SpO2, and movement, and I can still give structured next-step guidance.";
+    return "I can help with symptoms, vitals, and next steps. Share current HR, SpO2, and movement, and I will keep it clear.";
   }
 
   const level = latest.status === "Critical" ? "high" : latest.status === "Warning" ? "elevated" : "low";
-  return `Live assistant is temporarily unavailable. Current risk is ${level} with HR ${latest.hr}, SpO2 ${latest.spo2}, movement ${latest.movement}, trend ${latest.trend ?? "stable"}. Prioritize airway-breathing-circulation checks and repeat vitals soon.`;
+  if (level === "low") {
+    return `Things look steady overall with HR ${latest.hr}, SpO2 ${latest.spo2}, and movement ${latest.movement}. Keep monitoring and tell me if you want a plain-English summary.`;
+  }
+
+  return `This is a ${level} risk pattern with HR ${latest.hr}, SpO2 ${latest.spo2}, movement ${latest.movement}, trend ${latest.trend ?? "stable"}. Keep a close watch and be ready to escalate if it worsens.`;
 }
 
 const threatStyles: Record<ThreatLevel, { chip: string; note: string }> = {
@@ -246,6 +434,11 @@ export default function Page() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [simulationChoice, setSimulationChoice] = useState<SimulationChoice>("1");
   const wsRef = useRef<WebSocket | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    chatScrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chatMessages]);
 
   useEffect(() => {
     let mounted = true;
@@ -955,7 +1148,6 @@ export default function Page() {
         },
       ]);
     } catch {
-      setChatError("Live assistant is temporarily unavailable. Showing local guidance response.");
       setChatMessages((prev) => [
         ...prev,
         {
@@ -1207,13 +1399,14 @@ export default function Page() {
                             : "border border-slate-200 bg-white text-slate-700"
                         }`}
                       >
-                        <p>{message.content}</p>
+                        {renderChatContent(message.content, message.role === "user")}
                         <p className={`mt-1 text-[11px] ${message.role === "user" ? "text-slate-300" : "text-slate-400"}`}>
                           {formatClockLabel(message.timestamp)}
                         </p>
                       </div>
                     </div>
                   ))}
+                  <div ref={chatScrollRef} />
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-white p-3">
