@@ -1,7 +1,7 @@
 "use client";
 
 import { Session } from "@supabase/supabase-js";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CartesianGrid,
@@ -169,7 +169,7 @@ function getThreatLevel(status: RiskStatus, trend: TrendLabel): ThreatLevel {
   return "LOW";
 }
 
-function renderInlineBold(text: string, highlightClass: string): Array<string | JSX.Element> {
+function renderInlineBold(text: string, highlightClass: string): Array<string | ReactElement> {
   return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
     if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
       return (
@@ -183,7 +183,7 @@ function renderInlineBold(text: string, highlightClass: string): Array<string | 
   });
 }
 
-function renderChatContent(content: string, isUser: boolean): JSX.Element {
+function renderChatContent(content: string, isUser: boolean): ReactElement {
   const highlightClass = isUser ? "font-semibold text-white" : "font-semibold text-slate-900";
   const lines = content.split(/\r?\n/);
   const blocks: Array<{ type: "paragraph"; text: string } | { type: "list"; ordered: boolean; items: string[] }> = [];
