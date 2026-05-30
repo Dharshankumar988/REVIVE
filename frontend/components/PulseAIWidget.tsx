@@ -1,35 +1,77 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Send, Image as ImageIcon, Loader2, X, Plus, Sparkles, GripVertical, Paperclip, Trash2 } from "lucide-react";
 
 interface PulseAIWidgetProps {
   isCritical: boolean;
 }
 
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  imageUrl?: string;
+};
+
+const HF_TOKEN = process.env.NEXT_PUBLIC_HF_TOKEN || "";
+const MODEL_URL =
+  "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-11B-Vision-Instruct/v1/chat/completions";
+
 export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ x: 24, y: 24 });
+  const [size, setSize] = useState({ width: 420, height: 560 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null);
+
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    initialX: number;
+    initialY: number;
+  } | null>(null);
+  const resizeRef = useRef<{
+    startX: number;
+    startY: number;
+    initialW: number;
+    initialH: number;
+  } | null>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
 
+  // Chat state
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: "assistant",
+      content:
+        "Hello! I'm the REVIVE diagnostic assistant powered by Pulse AI. Describe your symptoms, ask medical questions, or upload an image for analysis.",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /* ────────────────────── Lifecycle ────────────────────── */
   useEffect(() => {
-    // Initialize Y position to bottom left
     if (typeof window !== "undefined") {
-      setPosition({ x: 24, y: window.innerHeight - 550 - 24 });
+      setPosition({ x: 24, y: window.innerHeight - 560 - 24 });
       setIsInitialized(true);
     }
   }, []);
 
-  // Auto-close and lock if critical
   useEffect(() => {
-    if (isCritical) {
-      setIsOpen(false);
-    }
+    if (isCritical) setIsOpen(false);
   }, [isCritical]);
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  /* ────────────────────── Drag ────────────────────── */
+  const handleDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
     if (isCritical) return;
     setIsDragging(true);
     dragRef.current = {
@@ -40,56 +82,186 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
     };
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging || !dragRef.current) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-    setPosition({
-      x: dragRef.current.initialX + dx,
-      y: dragRef.current.initialY + dy,
-    });
-  };
+  const handleDragMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isDragging || !dragRef.current) return;
+      setPosition({
+        x: dragRef.current.initialX + (e.clientX - dragRef.current.startX),
+        y: dragRef.current.initialY + (e.clientY - dragRef.current.startY),
+      });
+    },
+    [isDragging]
+  );
 
-  const handleMouseUp = () => {
+  const handleDragEnd = useCallback(() => {
     setIsDragging(false);
     dragRef.current = null;
-  };
+  }, []);
 
   useEffect(() => {
     if (isDragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    } else {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.addEventListener("mousemove", handleDragMove);
+      window.addEventListener("mouseup", handleDragEnd);
     }
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mousemove", handleDragMove);
+      window.removeEventListener("mouseup", handleDragEnd);
     };
-  }, [isDragging, handleMouseMove]);
+  }, [isDragging, handleDragMove, handleDragEnd]);
 
+  /* ────────────────────── Resize ────────────────────── */
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsResizing(true);
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialW: size.width,
+      initialH: size.height,
+    };
+  };
+
+  const handleResizeMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizing || !resizeRef.current) return;
+      const newW = Math.max(
+        340,
+        resizeRef.current.initialW + (e.clientX - resizeRef.current.startX)
+      );
+      const newH = Math.max(
+        400,
+        resizeRef.current.initialH + (e.clientY - resizeRef.current.startY)
+      );
+      setSize({ width: newW, height: newH });
+    },
+    [isResizing]
+  );
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+    resizeRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener("mousemove", handleResizeMove);
+      window.addEventListener("mouseup", handleResizeEnd);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleResizeMove);
+      window.removeEventListener("mouseup", handleResizeEnd);
+    };
+  }, [isResizing, handleResizeMove, handleResizeEnd]);
+
+  /* ────────────────────── Image Upload ────────────────────── */
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedImage(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const clearImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  /* ────────────────────── Chat ────────────────────── */
+  const sendMessage = async () => {
+    if ((!input.trim() && !selectedImage) || isLoading) return;
+
+    const userContent = input.trim() || (selectedImage ? "Analyze this image" : "");
+    setInput("");
+    const userMsg: Message = {
+      role: "user",
+      content: userContent,
+      imageUrl: imagePreview || undefined,
+    };
+
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setIsLoading(true);
+
+    // Build the HF API messages payload
+    const apiMessages = newMessages.map((m) => {
+      if (m.imageUrl) {
+        return {
+          role: m.role,
+          content: [
+            { type: "text" as const, text: m.content },
+            { type: "image_url" as const, image_url: { url: m.imageUrl } },
+          ],
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    clearImage();
+
+    try {
+      const response = await fetch(MODEL_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${HF_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "meta-llama/Llama-3.2-11B-Vision-Instruct",
+          messages: apiMessages,
+          max_tokens: 600,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) throw new Error("API request failed");
+
+      const data = await response.json();
+      const reply =
+        data.choices?.[0]?.message?.content || "No response generated.";
+
+      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "⚠️ Unable to reach the AI model right now. Please check your connection and try again.",
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /* ────────────────────── Render ────────────────────── */
   if (!isInitialized) return null;
 
+  /* ── Closed state: floating pill button ── */
   if (!isOpen) {
     return (
-      <div className="fixed bottom-6 left-6 z-50">
+      <div className="fixed bottom-6 left-6 z-50 group">
         <button
           onClick={() => !isCritical && setIsOpen(true)}
           disabled={isCritical}
-          className={`flex items-center gap-2 rounded-full px-6 py-3 font-semibold text-slate-800 shadow-xl backdrop-blur-xl border border-white/40 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl ${
-            isCritical
-              ? "cursor-not-allowed bg-white/30 opacity-60"
-              : "bg-white/40 hover:bg-white/60"
-          }`}
+          className="revive-fab"
+          style={{
+            opacity: isCritical ? 0.5 : 1,
+            cursor: isCritical ? "not-allowed" : "pointer",
+          }}
         >
-          <svg className="h-5 w-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-          REVIVE Assistant
+          <span className="revive-fab__glow" />
+          <Sparkles className="h-5 w-5 relative z-10" />
+          <span className="relative z-10 font-semibold tracking-wide">
+            REVIVE Assistant
+          </span>
         </button>
         {isCritical && (
-          <div className="absolute -top-12 left-0 w-48 rounded-xl bg-red-500/20 backdrop-blur-md p-2 text-center text-xs font-semibold text-red-900 shadow-sm border border-red-500/30">
+          <div className="revive-fab__locked">
             Locked during Golden Hour
           </div>
         )}
@@ -97,77 +269,169 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
     );
   }
 
+  /* ── Open state: full widget ── */
   return (
     <div
       ref={widgetRef}
+      className={`revive-widget ${isCritical ? "revive-widget--critical" : ""}`}
       style={{
         position: "fixed",
         left: `${position.x}px`,
         top: `${position.y}px`,
-        zIndex: 50,
-        width: "400px",
-        height: "550px",
-        minWidth: "320px",
-        minHeight: "400px",
-        resize: "both",
+        zIndex: 9999,
+        width: `${size.width}px`,
+        height: `${size.height}px`,
       }}
-      className={`flex flex-col overflow-hidden rounded-3xl shadow-2xl backdrop-blur-2xl transition-opacity ${
-        isCritical ? "pointer-events-none opacity-50 bg-red-500/10 border border-red-500/30 shadow-glow-red" : "bg-white/20 border border-white/40"
-      }`}
     >
-      {/* Draggable Header */}
+      {/* ── Glass layers ── */}
+      <div className="revive-widget__glass" />
+      <div className="revive-widget__noise" />
+
+      {/* ── Header / drag handle ── */}
       <div
-        onMouseDown={handleMouseDown}
-        className={`flex cursor-move items-center justify-between px-5 py-4 ${
-          isCritical ? "bg-red-500/20 border-b border-red-500/30" : "bg-white/30 border-b border-white/40 shadow-sm"
-        }`}
+        onMouseDown={handleDragStart}
+        className={`revive-widget__header ${isCritical ? "revive-widget__header--critical" : ""}`}
       >
-        <div className="flex items-center gap-3">
-          <div className={`p-1.5 rounded-full ${isCritical ? "bg-red-500/30" : "bg-white/50 backdrop-blur-sm"}`}>
-            <svg className={`h-4 w-4 ${isCritical ? "text-red-900" : "text-indigo-700"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        <div className="revive-widget__header-left">
+          <div className="revive-widget__logo">
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.5}
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
             </svg>
           </div>
-          <h3 className={`font-semibold tracking-wide ${isCritical ? "text-red-950" : "text-slate-800"}`}>
-            REVIVE Assistant
-          </h3>
+          <h3 className="revive-widget__title">REVIVE Assistant</h3>
+          <span className="revive-widget__badge">AI</span>
         </div>
         <button
           onClick={() => setIsOpen(false)}
-          className={`rounded-full p-2 transition-colors ${
-            isCritical ? "text-red-900 hover:bg-red-500/30" : "text-slate-600 hover:bg-white/50 hover:text-slate-900"
-          }`}
+          className="revive-widget__close"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X className="h-4 w-4" strokeWidth={2.5} />
         </button>
       </div>
 
-      {/* Content Area */}
-      <div className="relative flex-1 bg-white/40 backdrop-blur-md">
+      {/* ── Body ── */}
+      <div className="revive-widget__body">
         {isCritical ? (
-          <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-            <div className="rounded-full bg-red-500/20 p-4 mb-4 border border-red-500/30">
-              <svg className="h-10 w-10 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+          <div className="revive-widget__locked-body">
+            <div className="revive-widget__locked-icon">
+              <X className="h-10 w-10" strokeWidth={2} />
             </div>
-            <p className="text-lg font-bold text-red-950">Assistant Locked</p>
-            <p className="mt-2 text-sm text-red-900/80 leading-relaxed">
-              REVIVE Assistant is disabled during an active Golden Hour emergency to ensure focus on immediate triage and vitals stabilization.
+            <p className="revive-widget__locked-title">Assistant Locked</p>
+            <p className="revive-widget__locked-desc">
+              REVIVE Assistant is disabled during an active Golden Hour
+              emergency to ensure focus on immediate triage and vitals
+              stabilization.
             </p>
           </div>
         ) : (
-          <iframe
-            src="https://huggingface.co/spaces/Dkb988/pulse-ai-backend"
-            title="REVIVE Assistant Diagnostic Tool"
-            className="h-full w-full border-0 bg-transparent"
-            allow="camera; microphone"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          />
+          <>
+            {/* Chat Messages */}
+            <div className="revive-widget__messages">
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`revive-msg ${msg.role === "user" ? "revive-msg--user" : "revive-msg--assistant"}`}
+                  style={{ animationDelay: `${i * 0.05}s` }}
+                >
+                  <div
+                    className={`revive-msg__bubble ${msg.role === "user" ? "revive-msg__bubble--user" : "revive-msg__bubble--assistant"}`}
+                  >
+                    {msg.imageUrl && (
+                      <img
+                        src={msg.imageUrl}
+                        alt="Uploaded"
+                        className="revive-msg__image"
+                      />
+                    )}
+                    <span className="revive-msg__text">{msg.content}</span>
+                  </div>
+                </div>
+              ))}
+              {isLoading && (
+                <div className="revive-msg revive-msg--assistant">
+                  <div className="revive-msg__bubble revive-msg__bubble--assistant revive-msg__typing">
+                    <span className="revive-msg__dot" />
+                    <span className="revive-msg__dot" />
+                    <span className="revive-msg__dot" />
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Image preview */}
+            {imagePreview && (
+              <div className="revive-widget__img-preview">
+                <img src={imagePreview} alt="Preview" />
+                <button onClick={clearImage} className="revive-widget__img-remove">
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            {/* Input Area */}
+            <div className="revive-widget__input-area">
+              <div className="revive-widget__input-row">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                  style={{ display: "none" }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="revive-widget__attach"
+                  title="Attach image"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                  placeholder="Describe symptoms or ask a question…"
+                  className="revive-widget__text-input"
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={isLoading || (!input.trim() && !selectedImage)}
+                  className="revive-widget__send"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
+
+      {/* ── Resize handle ── */}
+      {!isCritical && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="revive-widget__resize-handle"
+          title="Drag to resize"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10">
+            <path d="M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M9 5L5 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M9 8L8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </div>
+      )}
     </div>
   );
 }
