@@ -38,7 +38,7 @@ function LoginPageContent() {
         } = await supabase.auth.getSession();
 
         if (mounted && session) {
-          router.replace("/");
+          window.location.href = "/";
         }
       } catch {
         // Supabase env may be missing during initial setup.
@@ -87,7 +87,7 @@ function LoginPageContent() {
         });
 
         if (!bootstrapError && bootstrapApplied === true) {
-          router.replace("/");
+          window.location.href = "/";
           return;
         }
 
@@ -96,7 +96,7 @@ function LoginPageContent() {
         return;
       }
 
-      router.replace("/");
+      window.location.href = "/";
     } catch (error: any) {
       setErrorMessage(`Unable to sign in: ${error.message || "Unknown error"}. Check Supabase configuration.`);
     }

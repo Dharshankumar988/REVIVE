@@ -454,7 +454,7 @@ export default function Page() {
         setUserEmail(null);
         setUserRole("user");
         setPendingUsers([]);
-        router.replace("/login");
+        window.location.href = "/login";
         return;
       }
 
@@ -471,7 +471,7 @@ export default function Page() {
           setAuthReady(false);
           setUserEmail(null);
           setUserRole("user");
-          router.replace("/login");
+          window.location.href = "/login";
           return;
         }
 
@@ -505,7 +505,7 @@ export default function Page() {
           setAuthReady(false);
           setUserEmail(null);
           setUserRole("user");
-          router.replace("/login?pending=1");
+          window.location.href = "/login?pending=1";
           return;
         }
 
@@ -516,7 +516,7 @@ export default function Page() {
         setAuthReady(false);
         setUserEmail(null);
         setUserRole("user");
-        router.replace("/login");
+        window.location.href = "/login";
       }
     };
 
@@ -538,7 +538,7 @@ export default function Page() {
       } catch {
         if (mounted) {
           setAuthReady(false);
-          router.replace("/login");
+          window.location.href = "/login";
         }
       }
 
@@ -1021,7 +1021,7 @@ export default function Page() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace("/login");
+    window.location.href = "/login";
   };
 
   const handleCreatePatient = async () => {

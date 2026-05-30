@@ -27,7 +27,7 @@ export default function SignupPage() {
         } = await supabase.auth.getSession();
 
         if (mounted && session) {
-          router.replace("/");
+          window.location.href = "/";
         }
       } catch {
         // Supabase env may be missing during initial setup.
