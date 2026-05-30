@@ -37,18 +37,6 @@
       "regex": "^/icon\\.svg(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/icon\\.svg(?:/)?$"
-    },
-    {
-      "page": "/login",
-      "regex": "^/login(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/login(?:/)?$"
-    },
-    {
-      "page": "/signup",
-      "regex": "^/signup(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/signup(?:/)?$"
     }
   ],
   "dataRoutes": [],
