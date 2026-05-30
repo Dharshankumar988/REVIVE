@@ -1402,11 +1402,18 @@ def _to_int(value: Any) -> int | None:
 
 def _format_vitals_context(context: dict[str, Any]) -> str:
     parts: list[str] = []
-    for key in ("hr", "spo2", "movement", "status", "trend", "scenario"):
+    for key in ("hr", "spo2", "movement", "status", "trend", "scenario", "hr_delta", "spo2_drop"):
         value = context.get(key)
         if value is None:
             continue
-        parts.append(f"{key.upper()}={value}")
+        
+        # Add explicit wording for minute-by-minute changes if present
+        if key == "hr_delta":
+            parts.append(f"MINUTE_HR_CHANGE={value} BPM")
+        elif key == "spo2_drop":
+            parts.append(f"MINUTE_SPO2_DROP={value} %")
+        else:
+            parts.append(f"{key.upper()}={value}")
     return ", ".join(parts)
 
 

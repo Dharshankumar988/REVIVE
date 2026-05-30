@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PulseAIWidget } from "@/components/PulseAIWidget";
 import { signOut } from "@/lib/auth";
 import { getApiBases, getWsCandidateUrls, toApiBaseFromWs } from "@/lib/api";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -1725,6 +1726,7 @@ export default function Page() {
           </button>
         ))}
       </div>
+      <PulseAIWidget isCritical={isCritical} />
     </main>
   );
 }

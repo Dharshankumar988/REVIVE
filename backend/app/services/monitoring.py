@@ -41,6 +41,17 @@ def spo2_drop_over_window(point_history: deque[dict[str, int | datetime]]) -> in
 
     return oldest - latest
 
+def hr_delta_over_window(point_history: deque[dict[str, int | datetime]]) -> int | None:
+    if len(point_history) < 2:
+        return None
+
+    oldest = point_history[0].get("hr")
+    latest = point_history[-1].get("hr")
+    if not isinstance(oldest, int) or not isinstance(latest, int):
+        return None
+
+    return latest - oldest
+
 
 def is_spo2_decreasing_over_time(point_history: deque[dict[str, int | datetime]]) -> bool:
     if len(point_history) < 4:

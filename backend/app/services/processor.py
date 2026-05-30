@@ -14,6 +14,7 @@ from .monitoring import (
     detect_sudden_spike,
     prune_history,
     spo2_drop_over_window,
+    hr_delta_over_window,
 )
 from .runtime import RuntimeState
 
@@ -34,6 +35,7 @@ async def process_vital(payload: IncomingVital, state: RuntimeState) -> dict[str
 
         status = assess_status(payload.hr, payload.spo2)
         spo2_drop = spo2_drop_over_window(state.history)
+        hr_delta = hr_delta_over_window(state.history)
         sudden_spike = detect_sudden_spike(state.history)
         rolling_anomaly = detect_rolling_anomaly(state.history)
 
@@ -55,6 +57,8 @@ async def process_vital(payload: IncomingVital, state: RuntimeState) -> dict[str
         "spo2": payload.spo2,
         "movement": payload.movement,
         "status": status,
+        "hr_delta": hr_delta,
+        "spo2_drop": spo2_drop,
     }
 
     if status == "Critical":
@@ -99,6 +103,8 @@ async def process_vital(payload: IncomingVital, state: RuntimeState) -> dict[str
         "anomaly": {
             "sudden_spike": sudden_spike,
             "rolling_anomaly": rolling_anomaly,
+            "hr_delta": hr_delta,
+            "spo2_drop": spo2_drop,
         },
     }
 
