@@ -105,8 +105,13 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
         left: `${position.x}px`,
         top: `${position.y}px`,
         zIndex: 50,
+        width: "400px",
+        height: "550px",
+        minWidth: "320px",
+        minHeight: "400px",
+        resize: "both",
       }}
-      className={`flex h-[550px] w-[400px] flex-col overflow-hidden rounded-3xl shadow-2xl backdrop-blur-2xl transition-opacity ${
+      className={`flex flex-col overflow-hidden rounded-3xl shadow-2xl backdrop-blur-2xl transition-opacity ${
         isCritical ? "pointer-events-none opacity-50 bg-red-500/10 border border-red-500/30 shadow-glow-red" : "bg-white/20 border border-white/40"
       }`}
     >
@@ -155,7 +160,7 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
           </div>
         ) : (
           <iframe
-            src="https://pulse-ai-dk.vercel.app"
+            src="https://huggingface.co/spaces/Dkb988/pulse-ai-backend"
             title="REVIVE Assistant Diagnostic Tool"
             className="h-full w-full border-0 bg-transparent"
             allow="camera; microphone"
