@@ -23,6 +23,14 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip() or "gemini-
 _SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 _SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 _SUPABASE_CLIENT: Any | None = None
+_GROQ_CLIENT: Any | None = None
+
+def _get_groq_client(api_key: str) -> Any:
+    global _GROQ_CLIENT
+    if _GROQ_CLIENT is None:
+        from groq import Groq
+        _GROQ_CLIENT = Groq(api_key=api_key)
+    return _GROQ_CLIENT
 QUICK_REQUEST_HINTS = (
     "quick",
     "quich",
@@ -405,9 +413,7 @@ async def generate_veteran_brief(vitals: dict[str, Any]) -> str:
 
 
 def _generate_via_groq_sync(api_key: str, vitals: dict[str, Any]) -> str:
-    from groq import Groq
-
-    client = Groq(api_key=api_key)
+    client = _get_groq_client(api_key)
 
     hr = vitals.get("hr")
     spo2 = vitals.get("spo2")
@@ -734,9 +740,7 @@ def _summarize_gemini_reply_with_groq_sync(
     context: dict[str, Any],
     require_structured: bool = False,
 ) -> str:
-    from groq import Groq
-
-    client = Groq(api_key=api_key)
+    client = _get_groq_client(api_key)
     vitals_summary = _format_vitals_context(context)
     status = str(context.get("status", "Unknown")).strip() or "Unknown"
     trend = str(context.get("trend", "stable")).strip() or "stable"
@@ -800,9 +804,7 @@ def _maybe_summarize_steps_with_groq(steps: list[str], vitals: dict[str, Any]) -
 
 
 def _summarize_steps_with_groq_sync(api_key: str, steps: list[str], vitals: dict[str, Any]) -> list[str]:
-    from groq import Groq
-
-    client = Groq(api_key=api_key)
+    client = _get_groq_client(api_key)
     prompt = (
         "Rewrite these clinical guidance steps as three concise, practical bullets without adding new facts. "
         "Keep the meaning aligned with the source guidance and make the wording clean and summary-like.\n"
@@ -1227,9 +1229,7 @@ def _generate_chat_reply_via_groq_sync(
     context: dict[str, Any],
     rag_chunks: list[str] | None = None,
 ) -> str:
-    from groq import Groq
-
-    client = Groq(api_key=api_key)
+    client = _get_groq_client(api_key)
     vitals_summary = _format_vitals_context(context)
     prompt_parts = [
         "You are the REVIVE assistant.",
@@ -1268,9 +1268,7 @@ def _generate_chat_reply_via_groq_sync(
 
 
 def _generate_conversational_chat_reply_via_groq_sync(api_key: str, message: str) -> str:
-    from groq import Groq
-
-    client = Groq(api_key=api_key)
+    client = _get_groq_client(api_key)
     prompt = "\n".join(
         [
             "You are the REVIVE assistant.",
@@ -1298,9 +1296,7 @@ def _generate_conversational_chat_reply_via_groq_sync(api_key: str, message: str
 
 
 def _generate_quick_chat_reply_via_groq_sync(api_key: str, message: str, context: dict[str, Any]) -> str:
-    from groq import Groq
-
-    client = Groq(api_key=api_key)
+    client = _get_groq_client(api_key)
     vitals_summary = _format_vitals_context(context)
     prompt = "\n".join(
         [

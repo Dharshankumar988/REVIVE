@@ -1243,16 +1243,20 @@ export default function Page() {
   return (
     <main
       className={`relative min-h-screen p-4 md:p-8 ${
-        isCritical ? "bg-red-100" : "bg-slate-100"
-      } transition-colors duration-500`}
+        isCritical ? "bg-red-50/90" : "bg-slate-50/90"
+      } transition-colors duration-500 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100 via-white to-slate-100`}
     >
-      {isCritical ? <div className="pointer-events-none absolute inset-0 animate-pulse bg-red-500/10" /> : null}
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200 md:px-7 md:py-5">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      {isCritical ? <div className="pointer-events-none absolute inset-0 animate-pulse-glow bg-red-500/10 shadow-glow-red" /> : null}
+      <div className="mx-auto max-w-[90rem] space-y-8">
+        <header className="rounded-3xl bg-white/60 backdrop-blur-xl px-6 py-5 shadow-glass border border-white/40 md:px-8 md:py-6 relative overflow-hidden transition-all duration-300 hover:shadow-glass-hover hover:-translate-y-1">
+          {isCritical && <div className="absolute top-0 left-0 w-full h-1 bg-red-500 animate-pulse-glow" />}
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between relative z-10">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">REVIVE Monitoring Dashboard</h1>
-              <p className="text-sm text-slate-600">Manual patient workflow first. Simulator is optional fallback.</p>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl drop-shadow-sm">REVIVE Golden Hour Dashboard</h1>
+                {isCritical && <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse ring-1 ring-red-500/50">ACTIVE EMERGENCY</span>}
+              </div>
+              <p className="text-sm text-slate-600 mt-1 font-medium">Real-world clinical triage & general health monitoring</p>
               {userEmail ? <p className="mt-1 text-xs text-slate-500">Signed in: {userEmail}</p> : null}
             </div>
             <div className="flex flex-col gap-2 md:items-end">
@@ -1446,20 +1450,31 @@ export default function Page() {
           </Card>
         </section>
 
-        <section className="grid grid-cols-1 gap-6 rounded-2xl bg-slate-950 p-6 shadow-sm ring-1 ring-slate-800 md:grid-cols-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Current Heart Rate</p>
-            <p className={`font-mono text-6xl font-bold tracking-wider ${valueColorMap[hrStatus]}`}>
-              {latest?.hr ?? "--"}
-              <span className="ml-2 text-xl text-slate-300">BPM</span>
-            </p>
+        <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className={`relative overflow-hidden rounded-3xl p-8 transition-all duration-500 hover:-translate-y-1 ${isCritical ? 'bg-gradient-to-br from-red-950 to-slate-900 shadow-glow-red border border-red-500/30' : 'bg-gradient-to-br from-slate-900 to-slate-800 shadow-glass border border-slate-700/50 hover:shadow-glass-hover'}`}>
+            <div className="relative z-10 flex flex-col items-center justify-center">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">Current Heart Rate</p>
+              <div className="flex items-baseline gap-2">
+                <p className={`font-mono text-8xl font-bold tracking-tighter drop-shadow-md ${isCritical ? 'text-red-400 animate-pulse' : valueColorMap[hrStatus]}`}>
+                  {latest?.hr ?? "--"}
+                </p>
+                <span className="text-2xl font-medium text-slate-400">BPM</span>
+              </div>
+            </div>
+            {isCritical && <div className="absolute -inset-10 bg-red-500/20 blur-3xl rounded-full animate-pulse-glow" />}
           </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Current SpO2</p>
-            <p className={`font-mono text-6xl font-bold tracking-wider ${valueColorMap[spo2Status]}`}>
-              {latest?.spo2 ?? "--"}
-              <span className="ml-2 text-xl text-slate-300">%</span>
-            </p>
+          
+          <div className={`relative overflow-hidden rounded-3xl p-8 transition-all duration-500 hover:-translate-y-1 ${isCritical ? 'bg-gradient-to-br from-red-950 to-slate-900 shadow-glow-red border border-red-500/30' : 'bg-gradient-to-br from-slate-900 to-slate-800 shadow-glass border border-slate-700/50 hover:shadow-glass-hover'}`}>
+            <div className="relative z-10 flex flex-col items-center justify-center">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">Current SpO2</p>
+              <div className="flex items-baseline gap-2">
+                <p className={`font-mono text-8xl font-bold tracking-tighter drop-shadow-md ${isCritical ? 'text-red-400 animate-pulse' : valueColorMap[spo2Status]}`}>
+                  {latest?.spo2 ?? "--"}
+                </p>
+                <span className="text-2xl font-medium text-slate-400">%</span>
+              </div>
+            </div>
+            {isCritical && <div className="absolute -inset-10 bg-red-500/20 blur-3xl rounded-full animate-pulse-glow" />}
           </div>
         </section>
 
