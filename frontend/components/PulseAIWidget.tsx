@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { X, Sparkles } from "lucide-react";
+import { X, Sparkles, Activity, ShieldCheck } from "lucide-react";
 
 interface PulseAIWidgetProps {
   isCritical: boolean;
@@ -14,6 +14,12 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [showDemoBanner, setShowDemoBanner] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("hidePulseDemoBanner") !== "true";
+    }
+    return true;
+  });
 
   const dragRef = useRef<{
     startX: number;
@@ -210,6 +216,38 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
               title="Pulse AI Assistant"
               allow="clipboard-read; clipboard-write; microphone"
             />
+            
+            {showDemoBanner && (
+              <div className="absolute top-3 left-3 right-3 bg-slate-900/95 backdrop-blur-md border border-teal-500/40 rounded-xl p-3.5 z-[100] shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="p-2 bg-teal-500/20 rounded-lg shrink-0 border border-teal-500/30">
+                  <Activity size={18} className="text-teal-400" />
+                </div>
+                <div className="flex-1 text-sm text-slate-200">
+                  <p className="font-bold text-white mb-1">Demo Credentials</p>
+                  <div className="bg-slate-950/50 rounded-lg p-2 mb-2 border border-slate-800">
+                    <p className="text-xs text-slate-300 font-mono mb-1">Email: <span className="text-teal-300 select-all">dkb988@gmail</span></p>
+                    <p className="text-xs text-slate-300 font-mono">Pass: <span className="text-teal-300 select-all">Doctor@123</span></p>
+                  </div>
+                  <p className="text-xs text-amber-300/90 font-medium leading-relaxed">
+                    1. Dismiss the access policy popup<br/>
+                    2. Login with above credentials<br/>
+                    3. Click the "Assistant" tab
+                  </p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowDemoBanner(false);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem("hidePulseDemoBanner", "true");
+                    }
+                  }} 
+                  className="text-slate-400 hover:text-white shrink-0 p-1 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors cursor-pointer"
+                  title="Dismiss"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
             
             {/* Overlay if iframe is dragging/resizing to prevent iframe from swallowing mouse events */}
             {(isDragging || isResizing) && (
