@@ -1,21 +1,11 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Image as ImageIcon, Loader2, X, Plus, Sparkles, GripVertical, Paperclip, Trash2 } from "lucide-react";
+import { X, Sparkles } from "lucide-react";
 
 interface PulseAIWidgetProps {
   isCritical: boolean;
 }
-
-type Message = {
-  role: "user" | "assistant";
-  content: string;
-  imageUrl?: string;
-};
-
-const HF_TOKEN = process.env.NEXT_PUBLIC_HF_TOKEN || "";
-const MODEL_URL =
-  "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-11B-Vision-Instruct/v1/chat/completions";
 
 export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -38,21 +28,8 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
     initialH: number;
   } | null>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
-
-  // Chat state
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Hello! I'm the REVIVE diagnostic assistant powered by Pulse AI. Describe your symptoms, ask medical questions, or upload an image for analysis.",
-    },
-  ]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   /* ────────────────────── Lifecycle ────────────────────── */
   useEffect(() => {
@@ -66,9 +43,17 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
     if (isCritical) setIsOpen(false);
   }, [isCritical]);
 
+  // Attempt auto-login when opened
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (isOpen && formRef.current && !hasSubmitted) {
+      try {
+        formRef.current.submit();
+        setHasSubmitted(true);
+      } catch (e) {
+        // Ignore submission errors
+      }
+    }
+  }, [isOpen, hasSubmitted]);
 
   /* ────────────────────── Drag ────────────────────── */
   const handleDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -154,90 +139,6 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
     };
   }, [isResizing, handleResizeMove, handleResizeEnd]);
 
-  /* ────────────────────── Image Upload ────────────────────── */
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSelectedImage(file);
-    const reader = new FileReader();
-    reader.onloadend = () => setImagePreview(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const clearImage = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  /* ────────────────────── Chat ────────────────────── */
-  const sendMessage = async () => {
-    if ((!input.trim() && !selectedImage) || isLoading) return;
-
-    const userContent = input.trim() || (selectedImage ? "Analyze this image" : "");
-    setInput("");
-    const userMsg: Message = {
-      role: "user",
-      content: userContent,
-      imageUrl: imagePreview || undefined,
-    };
-
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-    setIsLoading(true);
-
-    // Build the HF API messages payload
-    const apiMessages = newMessages.map((m) => {
-      if (m.imageUrl) {
-        return {
-          role: m.role,
-          content: [
-            { type: "text" as const, text: m.content },
-            { type: "image_url" as const, image_url: { url: m.imageUrl } },
-          ],
-        };
-      }
-      return { role: m.role, content: m.content };
-    });
-
-    clearImage();
-
-    try {
-      const response = await fetch(MODEL_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${HF_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "meta-llama/Llama-3.2-11B-Vision-Instruct",
-          messages: apiMessages,
-          max_tokens: 600,
-          stream: false,
-        }),
-      });
-
-      if (!response.ok) throw new Error("API request failed");
-
-      const data = await response.json();
-      const reply =
-        data.choices?.[0]?.message?.content || "No response generated.";
-
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content:
-            "⚠️ Unable to reach the AI model right now. Please check your connection and try again.",
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   /* ────────────────────── Render ────────────────────── */
   if (!isInitialized) return null;
 
@@ -320,7 +221,7 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
       </div>
 
       {/* ── Body ── */}
-      <div className="revive-widget__body">
+      <div className="revive-widget__body" style={{ padding: 0, overflow: 'hidden' }}>
         {isCritical ? (
           <div className="revive-widget__locked-body">
             <div className="revive-widget__locked-icon">
@@ -334,87 +235,36 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
             </p>
           </div>
         ) : (
-          <>
-            {/* Chat Messages */}
-            <div className="revive-widget__messages">
-              {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`revive-msg ${msg.role === "user" ? "revive-msg--user" : "revive-msg--assistant"}`}
-                  style={{ animationDelay: `${i * 0.05}s` }}
-                >
-                  <div
-                    className={`revive-msg__bubble ${msg.role === "user" ? "revive-msg__bubble--user" : "revive-msg__bubble--assistant"}`}
-                  >
-                    {msg.imageUrl && (
-                      <img
-                        src={msg.imageUrl}
-                        alt="Uploaded"
-                        className="revive-msg__image"
-                      />
-                    )}
-                    <span className="revive-msg__text">{msg.content}</span>
-                  </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="revive-msg revive-msg--assistant">
-                  <div className="revive-msg__bubble revive-msg__bubble--assistant revive-msg__typing">
-                    <span className="revive-msg__dot" />
-                    <span className="revive-msg__dot" />
-                    <span className="revive-msg__dot" />
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Image preview */}
-            {imagePreview && (
-              <div className="revive-widget__img-preview">
-                <img src={imagePreview} alt="Preview" />
-                <button onClick={clearImage} className="revive-widget__img-remove">
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
+          <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            {/* Form for POST login attempt */}
+            <form
+              ref={formRef}
+              action="https://pulse-ai-dk.vercel.app/login"
+              method="POST"
+              target="pulse-ai-iframe"
+              style={{ display: "none" }}
+            >
+              <input type="hidden" name="email" value="dkb988@gmail" />
+              <input type="hidden" name="password" value="Doctor@123" />
+              <input type="hidden" name="callbackUrl" value="/assistant" />
+              <input type="hidden" name="redirect" value="/assistant" />
+              <input type="hidden" name="next" value="/assistant" />
+            </form>
+            
+            {/* Iframe for Pulse AI - we pass query params as well for maximum compatibility */}
+            <iframe
+              name="pulse-ai-iframe"
+              src="https://pulse-ai-dk.vercel.app/login?email=dkb988@gmail&password=Doctor@123&callbackUrl=/assistant&redirect=/assistant"
+              style={{ width: "100%", height: "100%", border: "none" }}
+              title="Pulse AI Assistant"
+              allow="clipboard-read; clipboard-write; microphone"
+            />
+            
+            {/* Optional overlay if iframe is dragging (to prevent iframe from swallowing mouse events) */}
+            {(isDragging || isResizing) && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'transparent' }} />
             )}
-
-            {/* Input Area */}
-            <div className="revive-widget__input-area">
-              <div className="revive-widget__input-row">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageSelect}
-                  className="hidden"
-                  style={{ display: "none" }}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="revive-widget__attach"
-                  title="Attach image"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                  placeholder="Describe symptoms or ask a question…"
-                  className="revive-widget__text-input"
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={isLoading || (!input.trim() && !selectedImage)}
-                  className="revive-widget__send"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </>
+          </div>
         )}
       </div>
 
