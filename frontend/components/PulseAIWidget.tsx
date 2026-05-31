@@ -26,6 +26,7 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
     startY: number;
     initialW: number;
     initialH: number;
+    edge: 'right' | 'bottom' | 'both';
   } | null>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -97,30 +98,34 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   /* ────────────────────── Resize ────────────────────── */
   const handleResizeStart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    e.preventDefault();
     setIsResizing(true);
     resizeRef.current = {
       startX: e.clientX,
       startY: e.clientY,
       initialW: size.width,
       initialH: size.height,
+      edge: 'both'
     };
   };
 
   const handleResizeMove = useCallback(
     (e: MouseEvent) => {
       if (!isResizing || !resizeRef.current) return;
-      const newW = Math.max(
-        340,
-        resizeRef.current.initialW + (e.clientX - resizeRef.current.startX)
-      );
-      const newH = Math.max(
-        400,
-        resizeRef.current.initialH + (e.clientY - resizeRef.current.startY)
-      );
+      const r = resizeRef.current;
+      
+      let newW = size.width;
+      let newH = size.height;
+
+      if (r.edge === 'right' || r.edge === 'both') {
+        newW = Math.max(340, r.initialW + (e.clientX - r.startX));
+      }
+      if (r.edge === 'bottom' || r.edge === 'both') {
+        newH = Math.max(400, r.initialH + (e.clientY - r.startY));
+      }
+      
       setSize({ width: newW, height: newH });
     },
-    [isResizing]
+    [isResizing, size]
   );
 
   const handleResizeEnd = useCallback(() => {
@@ -236,10 +241,10 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
           </div>
         ) : (
           <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-            {/* Iframe for Pulse AI - we pass query params for maximum compatibility */}
+            {/* Iframe for Pulse AI - pointing directly to assistant with params */}
             <iframe
               name="pulse-ai-iframe"
-              src="https://pulse-ai-dk.vercel.app/login?email=dkb988@gmail&password=Doctor@123&callbackUrl=/assistant&redirect=/assistant"
+              src="https://pulse-ai-dk.vercel.app/assistant?email=dkb988@gmail&password=Doctor@123"
               style={{ width: "100%", height: "100%", border: "none" }}
               title="Pulse AI Assistant"
               allow="clipboard-read; clipboard-write; microphone"
@@ -253,20 +258,45 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
         )}
       </div>
 
-      {/* ── Resize handle ── */}
+      {/* ── Resize handles ── */}
       {!isCritical && (
-        <div
-          onMouseDown={handleResizeStart}
-          className="revive-widget__resize-handle"
-          title="Drag to resize"
-          style={{ position: 'absolute', bottom: 0, right: 0, zIndex: 9999, width: '20px', height: '20px', cursor: 'nwse-resize' }}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" style={{ position: 'absolute', bottom: '6px', right: '6px' }}>
-            <path d="M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M9 5L5 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M9 8L8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </div>
+        <>
+          {/* Right edge handle */}
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setIsResizing(true);
+              resizeRef.current = { startX: e.clientX, startY: e.clientY, initialW: size.width, initialH: size.height, edge: 'right' };
+            }}
+            style={{ position: 'absolute', top: 0, right: -5, bottom: 0, width: '10px', cursor: 'ew-resize', zIndex: 9999 }}
+          />
+          {/* Bottom edge handle */}
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setIsResizing(true);
+              resizeRef.current = { startX: e.clientX, startY: e.clientY, initialW: size.width, initialH: size.height, edge: 'bottom' };
+            }}
+            style={{ position: 'absolute', bottom: -5, left: 0, right: 0, height: '10px', cursor: 'ns-resize', zIndex: 9999 }}
+          />
+          {/* Bottom-right corner handle */}
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setIsResizing(true);
+              resizeRef.current = { startX: e.clientX, startY: e.clientY, initialW: size.width, initialH: size.height, edge: 'both' };
+            }}
+            className="revive-widget__resize-handle"
+            title="Drag to resize"
+            style={{ position: 'absolute', bottom: -5, right: -5, zIndex: 10000, width: '20px', height: '20px', cursor: 'nwse-resize' }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" style={{ position: 'absolute', bottom: '8px', right: '8px', pointerEvents: 'none' }}>
+              <path d="M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M9 5L5 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M9 8L8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </div>
+        </>
       )}
     </div>
   );
