@@ -169,42 +169,57 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
         zIndex: 9999,
       }}
     >
-      <div className="revive-widget__container">
-        {/* ── Header (Drag Handle) ── */}
-        <div
-          className="revive-widget__header"
-          onMouseDown={handleDragStart}
-          style={{ cursor: isCritical ? "not-allowed" : "grab" }}
-        >
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-teal-600/20 border border-teal-500/30 flex items-center justify-center glow-sm">
-              <Activity size={12} className="text-teal-400 animate-pulse-ring" />
-            </div>
-            <span className="font-bold text-white text-sm tracking-wide">Pulse AI</span>
-            <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-[10px] font-medium text-indigo-300 border border-indigo-500/20">
-              AI
-            </span>
-          </div>
-          <button
-            onClick={() => setIsOpen(false)}
-            className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition cursor-pointer"
-          >
-            <X size={14} />
-          </button>
-        </div>
+      {/* ── Glass layers ── */}
+      <div className="revive-widget__glass" />
+      <div className="revive-widget__noise" />
 
+      {/* ── Header / drag handle ── */}
+      <div
+        onMouseDown={handleDragStart}
+        className={`revive-widget__header ${isCritical ? "revive-widget__header--critical" : ""}`}
+        style={{ cursor: isCritical ? "not-allowed" : "grab" }}
+      >
+        <div className="revive-widget__header-left">
+          <div className="revive-widget__logo">
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.5}
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
+            </svg>
+          </div>
+          <h3 className="revive-widget__title">Pulse AI</h3>
+          <span className="revive-widget__badge">AI</span>
+        </div>
+        <button
+          onClick={() => setIsOpen(false)}
+          className="revive-widget__close"
+        >
+          <X className="h-4 w-4" strokeWidth={2.5} />
+        </button>
+      </div>
+
+      {/* ── Body ── */}
+      <div className="revive-widget__body" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
         {/* ── Content (Iframe) ── */}
         {isCritical ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4 bg-slate-900/50 backdrop-blur-md">
-            <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center glow-red">
-              <ShieldCheck size={24} className="text-red-400" />
+          <div className="revive-widget__locked-body">
+            <div className="revive-widget__locked-icon">
+              <ShieldCheck className="h-10 w-10" strokeWidth={2} />
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-white mb-1">AI Suspended</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">
-                During Golden Hour protocol, focus must remain on direct patient care. Pulse AI is temporarily disabled.
-              </p>
-            </div>
+            <p className="revive-widget__locked-title">Assistant Locked</p>
+            <p className="revive-widget__locked-desc">
+              REVIVE Assistant is disabled during an active Golden Hour
+              emergency to ensure focus on immediate triage and vitals
+              stabilization.
+            </p>
           </div>
         ) : (
           <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -229,8 +244,8 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
                     <p className="text-xs text-slate-300 font-mono">Pass: <span className="text-teal-300 select-all">Doctor@123</span></p>
                   </div>
                   <p className="text-xs text-amber-300/90 font-medium leading-relaxed">
-                    1. Dismiss the access policy popup<br/>
-                    2. Login with above credentials<br/>
+                    1. Login with above credentials<br/>
+                    2. Dismiss the access policy popup<br/>
                     3. Click the "Assistant" tab
                   </p>
                 </div>
