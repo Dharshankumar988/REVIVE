@@ -221,7 +221,7 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
       </div>
 
       {/* ── Body ── */}
-      <div className="revive-widget__body" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="revive-widget__body" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
         {isCritical ? (
           <div className="revive-widget__locked-body">
             <div className="revive-widget__locked-icon">
@@ -236,22 +236,7 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
           </div>
         ) : (
           <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-            {/* Form for POST login attempt */}
-            <form
-              ref={formRef}
-              action="https://pulse-ai-dk.vercel.app/login"
-              method="POST"
-              target="pulse-ai-iframe"
-              style={{ display: "none" }}
-            >
-              <input type="hidden" name="email" value="dkb988@gmail" />
-              <input type="hidden" name="password" value="Doctor@123" />
-              <input type="hidden" name="callbackUrl" value="/assistant" />
-              <input type="hidden" name="redirect" value="/assistant" />
-              <input type="hidden" name="next" value="/assistant" />
-            </form>
-            
-            {/* Iframe for Pulse AI - we pass query params as well for maximum compatibility */}
+            {/* Iframe for Pulse AI - we pass query params for maximum compatibility */}
             <iframe
               name="pulse-ai-iframe"
               src="https://pulse-ai-dk.vercel.app/login?email=dkb988@gmail&password=Doctor@123&callbackUrl=/assistant&redirect=/assistant"
@@ -260,9 +245,9 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
               allow="clipboard-read; clipboard-write; microphone"
             />
             
-            {/* Optional overlay if iframe is dragging (to prevent iframe from swallowing mouse events) */}
+            {/* Overlay if iframe is dragging/resizing to prevent iframe from swallowing mouse events */}
             {(isDragging || isResizing) && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'transparent' }} />
+              <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'transparent' }} />
             )}
           </div>
         )}
@@ -274,8 +259,9 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
           onMouseDown={handleResizeStart}
           className="revive-widget__resize-handle"
           title="Drag to resize"
+          style={{ position: 'absolute', bottom: 0, right: 0, zIndex: 9999, width: '20px', height: '20px', cursor: 'nwse-resize' }}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10">
+          <svg width="10" height="10" viewBox="0 0 10 10" style={{ position: 'absolute', bottom: '6px', right: '6px' }}>
             <path d="M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             <path d="M9 5L5 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             <path d="M9 8L8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />

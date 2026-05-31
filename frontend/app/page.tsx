@@ -176,6 +176,16 @@ export default function Page() {
   const [authReady, setAuthReady] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
+  const handleLogout = async () => {
+    try {
+      const supabase = getSupabaseClient();
+      await supabase.auth.signOut();
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
+
 
   useEffect(() => {
     let mounted = true;
@@ -658,6 +668,15 @@ export default function Page() {
                 {isCritical && <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse ring-1 ring-red-500/50">ACTIVE EMERGENCY</span>}
               </div>
               <p className="text-sm text-slate-600 mt-1 font-medium">Real-world clinical triage & general health monitoring</p>
+            </div>
+            <div className="flex items-center gap-4">
+              {userEmail && <span className="text-sm text-slate-600 font-medium">{userEmail}</span>}
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-glass transition-all"
+              >
+                Log Out
+              </button>
             </div>
           </div>
           <div className="mt-4 flex items-center gap-2 self-start rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
