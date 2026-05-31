@@ -14,6 +14,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PulseAIWidget } from "@/components/PulseAIWidget";
 import { getApiBases, getWsCandidateUrls, toApiBaseFromWs } from "@/lib/api";
+import { getSupabaseClient } from "@/lib/supabase";
+import { Session } from "@supabase/supabase-js";
 
 type RiskStatus = "Normal" | "Warning" | "Critical";
 type Scenario = "Stable" | "Gradual Decline" | "Sudden Cardiac Event" | "Cardiac Arrest";
@@ -171,9 +173,100 @@ export default function Page() {
   const [activeWsUrl, setActiveWsUrl] = useState<string | null>(null);
   const [simulationChoice, setSimulationChoice] = useState<SimulationChoice>("1");
   const wsRef = useRef<WebSocket | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
 
   useEffect(() => {
+    let mounted = true;
+
+    const setSessionState = async (session: Session | null) => {
+      if (!mounted) {
+        return;
+      }
+
+      if (!session) {
+        setAuthReady(false);
+        setUserEmail(null);
+        window.location.href = "/login";
+        return;
+      }
+
+      try {
+        const supabase = getSupabaseClient();
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role,is_approved")
+          .eq("id", session.user.id)
+          .single();
+
+        if (profileError || !profile) {
+          await supabase.auth.signOut();
+          setAuthReady(false);
+          setUserEmail(null);
+          window.location.href = "/login";
+          return;
+        }
+
+        if (!profile.is_approved) {
+          await supabase.auth.signOut();
+          setAuthReady(false);
+          setUserEmail(null);
+          window.location.href = "/login?pending=1";
+          return;
+        }
+
+        setUserEmail(session.user.email ?? null);
+        setAuthReady(true);
+      } catch {
+        setAuthReady(false);
+        setUserEmail(null);
+        window.location.href = "/login";
+      }
+    };
+
+    const initialize = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        await setSessionState(session);
+
+        const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+          void setSessionState(nextSession);
+        });
+
+        return () => {
+          data.subscription.unsubscribe();
+        };
+      } catch {
+        if (mounted) {
+          setAuthReady(false);
+          window.location.href = "/login";
+        }
+      }
+
+      return undefined;
+    };
+
+    let cleanup: (() => void) | undefined;
+    void initialize().then((fn) => {
+      cleanup = fn;
+    });
+
+    return () => {
+      mounted = false;
+      if (cleanup) {
+        cleanup();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) {
+      return;
+    }
 
     let disposed = false;
     let socket: WebSocket | null = null;
@@ -288,9 +381,12 @@ export default function Page() {
         socket.close();
       }
     };
-  }, []);
+  }, [authReady]);
 
   useEffect(() => {
+    if (!authReady) {
+      return;
+    }
 
     let disposed = false;
     let lastTimestamp: string | null = null;
@@ -386,7 +482,7 @@ export default function Page() {
       disposed = true;
       window.clearInterval(pollHandle);
     };
-  }, []);
+  }, [authReady]);
 
   const latest = points[points.length - 1];
   const currentStatus: RiskStatus = latest?.status ?? "Normal";

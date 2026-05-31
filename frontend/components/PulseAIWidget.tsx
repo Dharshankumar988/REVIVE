@@ -158,7 +158,7 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
           <span className="revive-fab__glow" />
           <Sparkles className="h-5 w-5 relative z-10" />
           <span className="relative z-10 font-semibold tracking-wide">
-            REVIVE Assistant
+            Pulse AI
           </span>
         </button>
         {isCritical && (
@@ -209,7 +209,7 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
               />
             </svg>
           </div>
-          <h3 className="revive-widget__title">REVIVE Assistant</h3>
+          <h3 className="revive-widget__title">Pulse AI</h3>
           <span className="revive-widget__badge">AI</span>
         </div>
         <button
