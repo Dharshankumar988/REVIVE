@@ -124,36 +124,28 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   /* ── Closed state: floating pill button ── */
   if (!isOpen) {
     return (
-      <>
-        {/* Hidden background iframe to perform the login securely behind the scenes */}
-        <iframe
-          src="https://pulse-ai-dk.vercel.app/login?email=dkb988@gmail&password=Doctor@123"
-          style={{ display: "none" }}
-          title="Background Auth"
-        />
-        <div className="fixed bottom-6 left-6 z-50 group">
-          <button
-            onClick={() => !isCritical && setIsOpen(true)}
-            disabled={isCritical}
-            className="revive-fab"
-            style={{
-              opacity: isCritical ? 0.5 : 1,
-              cursor: isCritical ? "not-allowed" : "pointer",
-            }}
-          >
-            <span className="revive-fab__glow" />
-            <Sparkles className="h-5 w-5 relative z-10" />
-            <span className="relative z-10 font-semibold tracking-wide">
-              Pulse AI
-            </span>
-          </button>
-          {isCritical && (
-            <div className="revive-fab__locked">
-              Locked during Golden Hour
-            </div>
-          )}
-        </div>
-      </>
+      <div className="fixed bottom-6 left-6 z-50 group">
+        <button
+          onClick={() => !isCritical && setIsOpen(true)}
+          disabled={isCritical}
+          className="revive-fab"
+          style={{
+            opacity: isCritical ? 0.5 : 1,
+            cursor: isCritical ? "not-allowed" : "pointer",
+          }}
+        >
+          <span className="revive-fab__glow" />
+          <Sparkles className="h-5 w-5 relative z-10" />
+          <span className="relative z-10 font-semibold tracking-wide">
+            Pulse AI
+          </span>
+        </button>
+        {isCritical && (
+          <div className="revive-fab__locked">
+            Locked during Golden Hour
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -166,67 +158,54 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
         position: "fixed",
         left: `${position.x}px`,
         top: `${position.y}px`,
-        zIndex: 9999,
         width: `${size.width}px`,
         height: `${size.height}px`,
+        zIndex: 9999,
       }}
     >
-      {/* ── Glass layers ── */}
-      <div className="revive-widget__glass" />
-      <div className="revive-widget__noise" />
-
-      {/* ── Header / drag handle ── */}
-      <div
-        onMouseDown={handleDragStart}
-        className={`revive-widget__header ${isCritical ? "revive-widget__header--critical" : ""}`}
-      >
-        <div className="revive-widget__header-left">
-          <div className="revive-widget__logo">
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2.5}
-                d="M13 10V3L4 14h7v7l9-11h-7z"
-              />
-            </svg>
-          </div>
-          <h3 className="revive-widget__title">Pulse AI</h3>
-          <span className="revive-widget__badge">AI</span>
-        </div>
-        <button
-          onClick={() => setIsOpen(false)}
-          className="revive-widget__close"
+      <div className="revive-widget__container">
+        {/* ── Header (Drag Handle) ── */}
+        <div
+          className="revive-widget__header"
+          onMouseDown={handleDragStart}
+          style={{ cursor: isCritical ? "not-allowed" : "grab" }}
         >
-          <X className="h-4 w-4" strokeWidth={2.5} />
-        </button>
-      </div>
-
-      {/* ── Body ── */}
-      <div className="revive-widget__body" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
-        {isCritical ? (
-          <div className="revive-widget__locked-body">
-            <div className="revive-widget__locked-icon">
-              <X className="h-10 w-10" strokeWidth={2} />
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-teal-600/20 border border-teal-500/30 flex items-center justify-center glow-sm">
+              <Activity size={12} className="text-teal-400 animate-pulse-ring" />
             </div>
-            <p className="revive-widget__locked-title">Assistant Locked</p>
-            <p className="revive-widget__locked-desc">
-              REVIVE Assistant is disabled during an active Golden Hour
-              emergency to ensure focus on immediate triage and vitals
-              stabilization.
-            </p>
+            <span className="font-bold text-white text-sm tracking-wide">Pulse AI</span>
+            <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-[10px] font-medium text-indigo-300 border border-indigo-500/20">
+              AI
+            </span>
+          </div>
+          <button
+            onClick={() => setIsOpen(false)}
+            className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* ── Content (Iframe) ── */}
+        {isCritical ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4 bg-slate-900/50 backdrop-blur-md">
+            <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center glow-red">
+              <ShieldCheck size={24} className="text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white mb-1">AI Suspended</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                During Golden Hour protocol, focus must remain on direct patient care. Pulse AI is temporarily disabled.
+              </p>
+            </div>
           </div>
         ) : (
           <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-            {/* Iframe for Pulse AI - directly to assistant tab (auth handled by background iframe) */}
+            {/* Iframe for Pulse AI - directly to assistant tab with auto-login params */}
             <iframe
               name="pulse-ai-iframe"
-              src="https://pulse-ai-dk.vercel.app/assistant"
+              src="https://pulse-ai-dk.vercel.app/?tab=chat&skipPopup=true&email=dkb988@gmail&password=Doctor@123"
               style={{ width: "100%", height: "100%", border: "none" }}
               title="Pulse AI Assistant"
               allow="clipboard-read; clipboard-write; microphone"
