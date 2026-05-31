@@ -10,7 +10,7 @@ interface PulseAIWidgetProps {
 export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ x: 24, y: 24 });
-  const [size, setSize] = useState({ width: 420, height: 560 });
+  const [size, setSize] = useState({ width: 500, height: 500 });
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -29,13 +29,11 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
     edge: 'right' | 'bottom' | 'both';
   } | null>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
-  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   /* ────────────────────── Lifecycle ────────────────────── */
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setPosition({ x: 24, y: window.innerHeight - 560 - 24 });
+      setPosition({ x: 24, y: window.innerHeight - 500 - 24 });
       setIsInitialized(true);
     }
   }, []);
@@ -43,18 +41,6 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   useEffect(() => {
     if (isCritical) setIsOpen(false);
   }, [isCritical]);
-
-  // Attempt auto-login when opened
-  useEffect(() => {
-    if (isOpen && formRef.current && !hasSubmitted) {
-      try {
-        formRef.current.submit();
-        setHasSubmitted(true);
-      } catch (e) {
-        // Ignore submission errors
-      }
-    }
-  }, [isOpen, hasSubmitted]);
 
   /* ────────────────────── Drag ────────────────────── */
   const handleDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -96,18 +82,6 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   }, [isDragging, handleDragMove, handleDragEnd]);
 
   /* ────────────────────── Resize ────────────────────── */
-  const handleResizeStart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsResizing(true);
-    resizeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      initialW: size.width,
-      initialH: size.height,
-      edge: 'both'
-    };
-  };
-
   const handleResizeMove = useCallback(
     (e: MouseEvent) => {
       if (!isResizing || !resizeRef.current) return;
@@ -150,28 +124,36 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
   /* ── Closed state: floating pill button ── */
   if (!isOpen) {
     return (
-      <div className="fixed bottom-6 left-6 z-50 group">
-        <button
-          onClick={() => !isCritical && setIsOpen(true)}
-          disabled={isCritical}
-          className="revive-fab"
-          style={{
-            opacity: isCritical ? 0.5 : 1,
-            cursor: isCritical ? "not-allowed" : "pointer",
-          }}
-        >
-          <span className="revive-fab__glow" />
-          <Sparkles className="h-5 w-5 relative z-10" />
-          <span className="relative z-10 font-semibold tracking-wide">
-            Pulse AI
-          </span>
-        </button>
-        {isCritical && (
-          <div className="revive-fab__locked">
-            Locked during Golden Hour
-          </div>
-        )}
-      </div>
+      <>
+        {/* Hidden background iframe to perform the login securely behind the scenes */}
+        <iframe
+          src="https://pulse-ai-dk.vercel.app/login?email=dkb988@gmail&password=Doctor@123"
+          style={{ display: "none" }}
+          title="Background Auth"
+        />
+        <div className="fixed bottom-6 left-6 z-50 group">
+          <button
+            onClick={() => !isCritical && setIsOpen(true)}
+            disabled={isCritical}
+            className="revive-fab"
+            style={{
+              opacity: isCritical ? 0.5 : 1,
+              cursor: isCritical ? "not-allowed" : "pointer",
+            }}
+          >
+            <span className="revive-fab__glow" />
+            <Sparkles className="h-5 w-5 relative z-10" />
+            <span className="relative z-10 font-semibold tracking-wide">
+              Pulse AI
+            </span>
+          </button>
+          {isCritical && (
+            <div className="revive-fab__locked">
+              Locked during Golden Hour
+            </div>
+          )}
+        </div>
+      </>
     );
   }
 
