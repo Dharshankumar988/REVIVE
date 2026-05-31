@@ -241,10 +241,10 @@ export function PulseAIWidget({ isCritical }: PulseAIWidgetProps) {
           </div>
         ) : (
           <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-            {/* Iframe for Pulse AI - pointing directly to assistant with params */}
+            {/* Iframe for Pulse AI - using login route with redirect params */}
             <iframe
               name="pulse-ai-iframe"
-              src="https://pulse-ai-dk.vercel.app/assistant?email=dkb988@gmail&password=Doctor@123"
+              src="https://pulse-ai-dk.vercel.app/login?email=dkb988@gmail&password=Doctor@123&redirect=/assistant&callbackUrl=/assistant"
               style={{ width: "100%", height: "100%", border: "none" }}
               title="Pulse AI Assistant"
               allow="clipboard-read; clipboard-write; microphone"
